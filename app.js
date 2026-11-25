@@ -279,7 +279,9 @@ async function makeSupabaseApi(){
     async missNewRound(elim, size, pots, ends){ return chk(await sb.rpc('miss_new_round', { p_eliminate:elim, p_group_size:size, p_pots:pots, p_round_ends:ends })); },
     async missGrant(email, amount){ return chk(await sb.rpc('miss_grant_credits', { p_email:email, p_amount:amount })); },
     async pushSave(sub, lang){ chk(await sb.rpc('miss_push_save', { p_sub:sub, p_lang:lang })); },
-    async pushSend(body){ const { data, error } = await sb.functions.invoke('send-push', { body }); if (error) throw error; return data || {}; },
+    async pushSend(body){ const { data, error } = await sb.functions.invoke('send-push', { body });
+      if (error){ let m = error.message; try { const j = await error.context.json(); m = [j.error, j.detail].filter(Boolean).join(': ') || m; } catch {} throw new Error('send-push: ' + m); }
+      return data || {}; },
     async missHistory(id){ return chk(await sb.from('miss_round_results').select('round,group_no,place,votes,advanced').eq('contestant_id', id).order('round')); },
     /* quick pre-registration + identity verification (needs predregistracia.sql; until then idOn stays false) */
     idOn: false,
