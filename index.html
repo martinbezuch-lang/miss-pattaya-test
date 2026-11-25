@@ -9,6 +9,10 @@
 <meta property="og:description" content="The international beauty contest of Pattaya – vote for your favourite all year round.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#c2185b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
 <script>try{var t=localStorage.getItem('mp_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
@@ -573,6 +577,8 @@
   .promo-t{background:rgba(0,0,0,.18);border-radius:99px;padding:2px 10px;font-variant-numeric:tabular-nums}
   @keyframes promobg{to{background-position:-200% 0}}
   .crbonus{font-size:11.5px;font-weight:800;color:#e8590c}
+  .pushbox{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-size:13.5px}
+  .pushbox>span:first-child{flex:1;min-width:180px;font-weight:600}.pushx{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px}
   .crpacks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
   .crpack{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;padding:16px 6px 10px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
   .crpack:hover{border-color:var(--accent)}
