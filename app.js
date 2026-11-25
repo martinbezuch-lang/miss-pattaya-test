@@ -295,7 +295,7 @@ function renderUser(){
   const lang = `<select class="langsel" id="langSel" aria-label="${esc(t('language'))}">${LANGS.map(([c, n]) => `<option value="${c}" ${c === LANG ? 'selected' : ''}>${c.toUpperCase()} · ${n}</option>`).join('')}</select>`;
   const theme = `<button class="theme-btn" data-act="theme" title="${esc(dark ? t('theme_light') : t('theme_dark'))}" aria-label="${esc(dark ? t('theme_light') : t('theme_dark'))}">${dark ? ICON_SUN : ICON_MOON}</button>`;
   $('#userArea').innerHTML = lang + theme + (state.user
-    ? `${realAdmin() ? `<button class="btn viewtoggle" data-act="asuser">${state.asUser ? t('view_user') : t('view_admin')}</button>` : ''}${isAdmin() ? `<span class="badge">${t('admin')}</span>` : ''}
+    ? `${realAdmin() ? `<button class="badge admtog ${state.asUser ? 'off' : ''}" data-act="asuser" title="${esc(state.asUser ? t('view_user') : t('view_admin'))}" aria-pressed="${!state.asUser}">${t('admin')}</button>` : ''}
        ${state.miss?.me?.id ? (u => `<button class="hbell" data-act="gifts" title="${esc(t('gf_title'))}" aria-label="${esc(t('gf_title'))}">🔔${u ? `<i>${u}</i>` : ''}</button>`)((state.miss.gifts || []).filter(g => !g.seen).length) : ''}
        <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
        <button class="btn ghost" data-act="profile">${t('profile')}</button><button class="btn" data-act="logout">${t('logout')}</button>`
