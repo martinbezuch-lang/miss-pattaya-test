@@ -46,6 +46,7 @@
   .logo-mark svg{width:15px;height:15px}
   .user{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);min-width:0}
   .user .email{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hcred{font-size:13px;white-space:nowrap;color:var(--muted);background:none;border:0;padding:0;cursor:pointer} .hcred b{color:var(--ink)}
   .badge{background:var(--ink);color:var(--onink);font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;letter-spacing:.04em}
 
   .btn{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:6px 12px;font-weight:600;font-size:13px;transition:background .15s,border-color .15s}
@@ -400,7 +401,7 @@
   .win{border:2px solid var(--up);background:var(--up-soft);border-radius:12px;padding:12px;margin-bottom:12px}
   @media (max-width:640px){.ideas{grid-template-columns:1fr}}
   @media (max-width:640px){
-    .user{gap:6px} .user .email{display:none} .user .btn{padding:6px 9px}
+    .user{gap:6px} .user .email{display:none} .user .btn{padding:6px 9px} .hcred .hl{display:none} .user .hbuy{display:none} .user .viewtoggle{max-width:38px;overflow:hidden;white-space:nowrap;padding:6px 8px}
     .sponsor-btn .lbl{display:none} .sponsor-btn .sp{display:none}
     .nav .wrap{gap:0;padding:0 10px} .nav a{padding:6px 7px;font-size:13px} .sponsor-btn{padding:5px 9px;font-size:12px}
     .tools-right #dvSearch{flex:1 1 100%}
@@ -483,8 +484,9 @@
   .mclk b{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
   .mclk i{font-style:normal;font-size:10px;font-weight:700;opacity:.9;text-transform:uppercase;margin-top:3px}
   .cdn{font-variant-numeric:tabular-nums;font-weight:800}
-  .mcd{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;background:var(--accent-soft);color:var(--ink);border-radius:999px;padding:3px 10px}
-  .mcd .cdn{color:var(--accent)}
+  .mcd{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;background:linear-gradient(135deg,var(--accent),#ff6f61);color:#fff;border-radius:999px;padding:4px 11px;box-shadow:0 3px 10px rgba(194,24,91,.25)}
+  .mcd .cdn{color:#fff;font-size:13.5px}
+  b[data-mcount]{display:inline-block;color:#fff;background:linear-gradient(135deg,var(--accent),#ff6f61);border-radius:999px;padding:1px 9px;font-variant-numeric:tabular-nums;font-weight:800}
   @media (max-width:640px){ .mhead-c{width:100%} .mclk b{font-size:24px} }
   .mhead-a{display:flex;align-items:center;gap:8px}
   @media (max-width:640px){
