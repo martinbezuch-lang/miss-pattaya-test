@@ -730,6 +730,13 @@
   .vs-t tr:first-child td{border-top:0}
   .vs-t td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   @media (max-width:640px){ .vs-tiles{grid-template-columns:1fr 1fr} .vs-grid{grid-template-columns:1fr} .vs-bars{height:120px} .vs-num{display:none} }
+  .pz-list{display:grid;gap:8px;margin:12px 0}
+  .pz-row{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:baseline;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .pz-place{font-weight:700}
+  .pz-adm{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .pz-adm label{display:flex;flex-direction:column;gap:2px}
+  .pz-adm input{width:100%}
+  @media (max-width:560px){ .pz-row{grid-template-columns:1fr;gap:2px} .pz-adm{grid-template-columns:1fr} }
   .mleads{display:grid;gap:6px}
   .mlead{display:flex;gap:10px;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
   .mlead.done{opacity:.55}
