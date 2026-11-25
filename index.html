@@ -430,10 +430,10 @@
   .mmeta{font-size:12px;color:var(--muted);margin:2px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mvote{width:100%;padding:6px 4px}
   .mvrow{display:flex;gap:6px}.mvrow .mvote{flex:1;width:auto}
-  .mcredb,.mcredb:hover:not(:disabled){flex:none;padding:0 2px;font-size:26px;line-height:1;background:none;border:0;box-shadow:none;cursor:pointer}
+  .mcredb,.mcredb:hover:not(:disabled),.mcredb:focus,.mcredb:active{flex:none;padding:0 2px;font-size:26px;line-height:1;background:none;border:0;box-shadow:none;outline:none;filter:none;cursor:pointer}
   .mcredb:hover:not(:disabled){transform:scale(1.12)}
   .lasthour .mcredb:not(:disabled){animation:mcpulse 1.6s ease-in-out infinite}
-  @keyframes mcpulse{50%{transform:scale(1.18);filter:drop-shadow(0 0 6px rgba(255,95,143,.9))}}
+  @keyframes mcpulse{50%{transform:scale(1.22)}}
   .mgc-r .mcredb{font-size:19px}
   .mrank{position:absolute;top:6px;left:6px;font-style:normal;font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff}
   .mrank.adv{background:var(--up,#1a7f37)}
@@ -558,6 +558,14 @@
   .mcbtn{font-weight:800;padding:9px 4px}
   .mcbtn.short{opacity:.55}
   .mcbtn.arm{background:linear-gradient(135deg,#ff5f8f,#ff9a5a);border-color:transparent;color:#fff;opacity:1}
+  .crpacks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .crpack{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;padding:16px 6px 10px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
+  .crpack:hover{border-color:var(--accent)}
+  .crpack.top{border:2px solid #ff5f8f;box-shadow:0 0 0 3px rgba(255,95,143,.15)}
+  .crn{font-size:17px}.crp{font-size:18px;font-weight:800}
+  .crtag,.croff{position:absolute;top:-9px;left:50%;transform:translateX(-50%);white-space:nowrap;font-style:normal;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:99px;color:#fff;background:linear-gradient(135deg,#ff5f8f,#ff9a5a)}
+  .croff{background:#22a06b}
+  @media (max-width:480px){.crpacks{grid-template-columns:repeat(2,1fr)}}
   .linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
   .mfavs{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;margin-top:10px}
   .mfav{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column}
