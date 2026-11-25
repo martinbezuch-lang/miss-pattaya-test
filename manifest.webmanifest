@@ -1,0 +1,12 @@
+{
+  "name": "MISS of Pattaya",
+  "short_name": "MISS Pattaya",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#11131a",
+  "theme_color": "#c2185b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
