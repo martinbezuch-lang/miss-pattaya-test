@@ -549,7 +549,7 @@ function renderMiss(){
     <div id="pushBox"></div>
     <section class="mhead">
       <div class="mhead-t"><h1>👑 ${esc(st.title)}</h1>
-        <span class="mhead-meta">${esc(t('round_n', { n: st.current_round }))} · ${esc(t('contestants_n', { n: m.board.length }))} · ${esc(t('groups_n', { n: groups.length }))} · ${esc(t('vote_every', { h: st.vote_hours }))} · <button class="mlink" data-act="rules">${t('rules')}</button>${st.voting_open ? '' : ` · <b>${t('voting_paused')}</b>`}</span>
+        <span class="mhead-meta">${esc(t('round_n', { n: st.current_round }))} · ${esc(t('contestants_n', { n: m.board.length }))} · ${esc(t('groups_n', { n: groups.length }))} · ${esc(t('vote_every', { h: st.vote_hours }))} · <button class="mlink" data-act="rules">${t('rules')}</button> · <button class="mlink" data-act="prizes">🏆 ${t('pz_btn')}</button>${st.voting_open ? '' : ` · <b>${t('voting_paused')}</b>`}</span>
         <p class="mtag">${t('tagline')}</p></div>
       <div class="mhead-a">${cta}${realAdmin() ? `<button class="btn ${photosHidden() ? 'primary' : ''}" data-act="togglephotos" title="${esc(t('ph_admin_hint'))}">${photosHidden() ? '👁 ' + t('ph_show') : '🙈 ' + t('ph_hide')}</button>` : ''}</div>
       ${st.round_ends_at ? `<div class="mhead-c ${missEnded() ? 'over' : (missEndsLeft() < 864e5 ? 'urgent' : '')}">${missEnded() ? `⏳ ${esc(t('round_over', { n: st.current_round }))}` : `<span class="mhead-l">⏳ ${t('ends_in')}</span><div class="mclk" data-mclock>${clockInner(missEndsLeft())}</div>`}</div>` : ''}
@@ -1063,6 +1063,9 @@ async function renderMissAdmin(){
       <label class="check field"><input type="checkbox" id="mst_o" ${st.voting_open ? 'checked' : ''}> ${t('ad_voting')}</label>
       <div class="field"><label class="l">🔥 ${t('ad_promo')}</label><input type="number" id="mst_pp" min="0" max="500" step="5" value="${st.ui?.promo?.pct ?? 0}"><span class="small">${t('ad_promo_hint')}</span></div>
       <div class="field"><label class="l">🔥 ${t('ad_promo_end')}</label><input type="datetime-local" id="mst_pu" value="${toLocalInput(st.ui?.promo?.until || new Date(Date.now() + 864e5).toISOString())}"></div>
+      <div class="field" style="grid-column:1/-1"><label class="l">🏆 ${esc(t('ad_pz'))}</label>
+        <div class="pz-adm">${[['p1', '🥇 ' + place(1), 200], ['p2', '🥈 ' + place(2), 200], ['p3', '🥉 ' + place(3), 200], ['more', '🎀 ' + t('pz_other'), 200], ['note', t('ad_pz_note'), 300], ['sponsor', t('ad_pz_sp'), 80]].map(([k, l, mx]) => `<label class="small">${esc(l)}<input type="text" data-pz="${k}" maxlength="${mx}" value="${esc(st.ui?.prizes?.[k] || '')}"></label>`).join('')}</div>
+        <span class="small">${esc(t('ad_pz_hint'))}</span></div>
       <div class="field" style="grid-column:1/-1"><label class="l">${t('ad_show')}</label><div class="actions" style="justify-content:flex-start;gap:14px;flex-wrap:wrap">
         ${['instagram', 'star', 'need'].map(k => `<label class="check"><input type="checkbox" data-mui="${k}" ${missUi(k) ? 'checked' : ''}> ${t('ui_' + k)}</label>`).join('')}</div></div>
       <div class="actions"><button class="btn">${t('ad_save')}</button></div></form>
@@ -1083,6 +1086,7 @@ async function renderMissAdmin(){
     try { await api.missSaveSettings({ title: $('#mst_t').value.trim() || 'MISS of Pattaya', registration_until: new Date($('#mst_r').value).toISOString(), voting_open: $('#mst_o').checked,
         round_ends_at: $('#mst_e').value ? new Date($('#mst_e').value).toISOString() : null,
         ui: { ...(st.ui || {}), ...Object.fromEntries([...document.querySelectorAll('[data-mui]')].map(i => [i.dataset.mui, i.checked])),
+          prizes: Object.fromEntries([...document.querySelectorAll('[data-pz]')].map(i => [i.dataset.pz, i.value.trim()])),
           promo: { pct: Math.max(0, Math.round(Number($('#mst_pp').value) || 0)), until: $('#mst_pu').value ? new Date($('#mst_pu').value).toISOString() : null } } });
       toast(t('ad_saved')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); }
   });
@@ -1141,6 +1145,17 @@ function openRules(){
     <p>${t('ru_2', { h: st.vote_hours })}</p>
     <p>${regOpen ? t('ru_open', { d: esc(fmtDate(st.registration_until)) }) : t('ru_closed')}</p>
     <p class="small">${t('ru_4')}</p>`);
+}
+
+function openPrizes(){
+  const pz = state.miss.st.ui?.prizes || {}, has = ['p1', 'p2', 'p3', 'more'].some(k => (pz[k] || '').trim());
+  const row = (lbl, txt) => (txt || '').trim() ? `<div class="pz-row"><span class="pz-place">${lbl}</span><div>${esc(txt.trim()).replace(/\n/g, '<br>')}</div></div>` : '';
+  openModal(`<h2>🏆 ${esc(t('pz_btn'))}</h2>
+    ${has ? `<div class="pz-list">${row('🥇 ' + esc(place(1)), pz.p1)}${row('🥈 ' + esc(place(2)), pz.p2)}${row('🥉 ' + esc(place(3)), pz.p3)}${row('🎀 ' + esc(t('pz_other')), pz.more)}</div>`
+      : `<p class="sub">${esc(t('pz_soon'))}</p>`}
+    ${(pz.note || '').trim() ? `<p>${esc(pz.note.trim()).replace(/\n/g, '<br>')}</p>` : ''}
+    ${(pz.sponsor || '').trim() ? `<p><b>${esc(t('pz_sp', { s: pz.sponsor.trim() }))}</b></p>` : ''}
+    <p class="small">${esc(t('pz_rule'))}</p>`);
 }
 
 /* ---------------- sign in & profile ---------------- */
@@ -1214,7 +1229,7 @@ async function track(page, ref){
   const country = await Promise.race([visitorCountry(), new Promise(r => setTimeout(() => r(''), 4500))]);
   try { await api.track({ page, ref: ref ?? null, vid: VISIT_ID, country, lang: LANG, src, mobile: matchMedia('(max-width:760px)').matches || /Mobi|Android|iPhone/i.test(navigator.userAgent) }); } catch {}
 }
-const TRACK_ACTS = new Set(['rules', 'signup', 'joinnow', 'login', 'loginup', 'credits', 'gifts', 'pushon', 'idverify', 'draftlater']);
+const TRACK_ACTS = new Set(['rules', 'prizes', 'signup', 'joinnow', 'login', 'loginup', 'credits', 'gifts', 'pushon', 'idverify', 'draftlater']);
 function trackClick(d){
   if (d.act) return TRACK_ACTS.has(d.act) && track('act:' + d.act);
   if (d.mvote) return track('vote', Number(d.mvote));
@@ -1369,6 +1384,7 @@ document.addEventListener('click', async e => {
       try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
       return; }
     case 'rules': return openRules();
+    case 'prizes': return openPrizes();
     case 'visits': return openVisitStats();
     case 'grant': try { const b = await api.missGrant($('#mg_e').value.trim(), Number($('#mg_a').value)); toast(t('ad_granted', { n: creditsTxt(b) })); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return;
     case 'newround': return openMissNewRound();
