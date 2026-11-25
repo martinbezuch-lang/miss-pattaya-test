@@ -37,18 +37,24 @@ const store = (() => { const mem = {}; return {
 const LANG_CODES = LANGS.map(l => l[0]);
 function pickLang(){
   const saved = store.get('mp_lang'); if (LANG_CODES.includes(saved)) return saved;
-  for (const l of navigator.languages || [navigator.language || 'en']){ const c = String(l).slice(0, 2).toLowerCase(); if (LANG_CODES.includes(c)) return c; }
+  for (const l of navigator.languages || [navigator.language || 'en']){
+    const x = String(l).toLowerCase();
+    if (x.startsWith('zh')) return /hant|-tw|-hk|-mo/.test(x) ? 'zh-TW' : 'zh'; // Taiwan / Hong Kong → traditional characters
+    const c = /^(nb|nn)\b/.test(x) ? 'no' : x.slice(0, 2);
+    if (LANG_CODES.includes(c)) return c;
+  }
   return 'en';
 }
 let LANG = pickLang();
-const LOCALE = { en:'en-GB', sk:'sk-SK', cs:'cs-CZ', de:'de-DE', ru:'ru-RU', ko:'ko-KR', ja:'ja-JP', hi:'hi-IN' };
+const LOCALE = { en:'en-GB', th:'th-TH', zh:'zh-CN', 'zh-TW':'zh-TW', vi:'vi-VN', km:'km-KH', lo:'lo-LA', sk:'sk-SK', cs:'cs-CZ', de:'de-DE', fr:'fr-FR', it:'it-IT', es:'es-ES', pt:'pt-BR', no:'nb-NO', ru:'ru-RU', ko:'ko-KR', ja:'ja-JP', hi:'hi-IN' };
 let plural = new Intl.PluralRules(LANG);
 function t(key, v = {}){
   let s = T[LANG][key] ?? T.en[key] ?? key;
   if (typeof s === 'object'){ s = s[plural.select(Number(v.n))] ?? s.other ?? s.one; }
   return String(s).replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
 }
-const ord = n => ({ en: n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'), ru: n + '-е', ko: n + '위', ja: n + '位', hi: 'स्थान ' + n, th: 'ที่ ' + n }[LANG] || n + '.');
+const ord = n => ({ en: n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'), ru: n + '-е', ko: n + '위', ja: n + '位', hi: 'स्थान ' + n, th: 'ที่ ' + n,
+  zh: '第' + n + '名', 'zh-TW': '第' + n + '名', vi: 'hạng ' + n, km: 'លេខ ' + n, lo: 'ອັນດັບ ' + n, fr: n === 1 ? '1re' : n + 'e', it: n + 'º', es: n + '.º', pt: n + 'º' }[LANG] || n + '.');
 const place = n => t('place', { o: ord(n) });
 const votesTxt = n => t('votes_n', { n });
 const creditsTxt = n => t('credits_n', { n });
