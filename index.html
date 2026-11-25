@@ -412,6 +412,9 @@
     .trow .chart-txt{white-space:normal}
   }
   @media (max-width:430px){ .logo .lt{display:none} .badge:not(.admtog){display:none} }
+  .uic{display:none}
+  .uic svg{display:block}
+  @media (max-width:640px){ .user .ulb{display:none} .user .uic{display:inline-block} .user .btn[data-act=profile],.user .btn[data-act=logout]{padding:6px 8px} .user .admtog{padding:4px 8px;font-size:11px} }
 
   /* MISS */
   .nav a.miss-tab{color:#c2255c}
@@ -630,10 +633,23 @@
   .mpc{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:11px;padding:10px}
   .row2 > input{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--field)}
   @media (max-width:760px){
-    .mrow{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:44%;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px}
+    .mrow{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:31%;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px}
     .mcard{scroll-snap-align:start}
-    .mprof{grid-template-columns:1fr}
-    .mprof-photo{max-width:260px}
+    /* 3 smaller cards per row on a phone */
+    .mrow .mflagbig{font-size:18px;bottom:4px;left:4px}
+    .mrow .msoc{right:26px;bottom:4px;gap:2px}.mrow .msoc.nostar{right:4px}
+    .mrow .msico{width:19px;height:19px;font-size:8px}
+    .mrow .mstar{width:19px;height:19px;right:4px;bottom:4px;font-size:11px}
+    .mrow .mrank{font-size:10.5px;padding:1px 6px;top:5px;left:5px}
+    .mrow .mname{font-size:12.5px;margin-top:5px}
+    .mrow .mvotes{font-size:10.5px}.mrow .mvotes b{font-size:14px}
+    .mrow .mvrow{gap:3px}.mrow .mvote{font-size:12px;padding:5px 2px}
+    .mrow .mcredb,.mrow .mcredb:hover:not(:disabled){font-size:19px}
+    /* profile on a phone: name → photo → what she likes → standings → voting */
+    .mprof{display:flex;flex-direction:column;gap:0}
+    .mprof-side,.mprof-body{display:contents}
+    .mprof-mhead{order:1}.mprof-photo{order:2}.mprof-adph{order:3}.mprof-traits{order:4;margin-top:12px}.mprof-stats{order:5;margin-top:12px}.mprof-vote{order:6}.mprof-link{order:7}
+    .mprof-photo{max-width:240px;width:100%}
     .mprof-side .mprof-photo{margin:0 auto}
     .mprof-mhead{display:block;margin-bottom:12px}.mprof-mhead h2{margin-right:30px}
     .mprof-body > h2,.mprof-body > h2 + .sub{display:none}
