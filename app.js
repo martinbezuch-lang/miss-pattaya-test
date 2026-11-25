@@ -394,7 +394,7 @@ function missFavView(){
         <div class="mfav-info"><b>${esc(c.first_name)}</b> ${flagOf(c.country)} <span class="small">· ${votesTxt(c.votes)}</span><div class="mfav-st">${missPosLine(p)}</div></div></div>
       ${missMiniTable(c, true)}
       <div class="mfav-act"><button class="btn primary" data-mvote="${c.id}" ${w || !missVoteOpen() ? 'disabled' : ''}>${w ? tCd('next_vote_short', w.left) : missEnded() ? t('round_ended') : t('vote')}</button>
-        ${credBtn(c.id, !!w)}<button class="btn" data-mopen="${c.id}">${t('share')}</button></div></div>`; }).join('')}</div>
+        ${credBtn(c.id)}<button class="btn" data-mopen="${c.id}">${t('share')}</button></div></div>`; }).join('')}</div>
     <p class="small" style="margin:8px 0 0">${t('fav_note')}</p>`;
 }
 function missCountTxt(){ const left = missEndsLeft(); return left ? fmtHMS(left) : missEnded() ? t('round_ended') : ''; }
@@ -406,6 +406,7 @@ setInterval(() => { // every second: round clock, "next vote in" timers; re-rend
   document.querySelectorAll('[data-mclock]').forEach(el => { if (left) el.innerHTML = clockInner(left); });
   document.querySelectorAll('[data-mcount]').forEach(el => { el.textContent = missCountTxt(); });
   const hc = document.querySelector('.mhead-c'); if (hc && left) hc.classList.toggle('urgent', left < 864e5);
+  document.body.classList.toggle('lasthour', !!left && left < 36e5); // 💎 pulse in the last hour of the round
   const ended = missEnded(); if (missWasEnded === false && ended) stale = true; missWasEnded = ended;
   if (stale && $('#modal').hidden && !document.querySelector('.cropov')) renderMiss();
 }, 1000);
@@ -488,7 +489,7 @@ function missGroupCompact(g){
         <button class="mflagbtn mgc-f" data-mflag="${esc(c.country)}" title="${esc(countryName(c.country))}">${flagOf(c.country)}</button>
         <button class="mgc-name" data-mopen="${c.id}">${esc(c.first_name)}${fav.includes(c.id) ? ' <span class="mgc-star">★</span>' : ''}</button>
         <span class="mgc-v"><b>${c.votes}</b>${r > adv && missUi('need') ? `<i class="mneed">−${list[adv - 1].votes - c.votes + 1}</i>` : ''}</span>
-        <button class="btn ${mine ? '' : 'primary'} mgc-b" data-mvote="${c.id}" ${cd || !open ? 'disabled' : ''}>${mine ? '✓' : t('vote')}</button>${credBtn(c.id, !!cd)}</div>`; }).join('')}</div>`;
+        <button class="btn ${mine ? '' : 'primary'} mgc-b" data-mvote="${c.id}" ${cd || !open ? 'disabled' : ''}>${mine ? '✓' : t('vote')}</button>${credBtn(c.id)}</div>`; }).join('')}</div>`;
 }
 function missGroup(g){
   const list = missSorted(g), adv = missAdvOf(list.length), fav = missFavs(), f = state.missFlag;
@@ -503,7 +504,7 @@ function missGroup(g){
         <button class="mflagbig" data-mflag="${esc(c.country)}" title="${esc(t('flag_title', { c: countryName(c.country) }))}">${flagOf(c.country)}</button>
         ${r > adv && missUi('need') ? `<i class="mneedpill" title="${esc(t('short_title', { a: adv }))}">${esc(t('short_n', { n: list[adv - 1].votes - c.votes + 1 }))}</i>` : ''}</div>
         <div class="mline"><span class="mnm">${esc(c.first_name)}<small>${c.age}</small></span>${isAdmin() ? `<label class="madph" title="${esc(t('ad_photo'))}" aria-label="${esc(t('ad_photo'))}: ${esc(c.first_name)}">📷<input type="file" accept="image/*" data-adph="${c.id}" hidden></label>` : ''}<span class="mvotes"><b>${c.votes}</b></span></div>
-        <div class="mvrow"><button class="btn ${mineHere ? '' : 'primary'} mvote" data-mvote="${c.id}" ${cd || !missVoteOpen() ? 'disabled' : ''}>${mineHere ? t('your_vote') : missEnded() ? t('round_ended') : t('vote')}</button>${credBtn(c.id, !!cd)}</div>
+        <div class="mvrow"><button class="btn ${mineHere ? '' : 'primary'} mvote" data-mvote="${c.id}" ${cd || !missVoteOpen() ? 'disabled' : ''}>${mineHere ? t('your_vote') : missEnded() ? t('round_ended') : t('vote')}</button>${credBtn(c.id)}</div>
       </div>`; }).join('')}</div></section>`;
 }
 const CREDIT_STEPS = [10, 50, 100, 200, 500, 1000];
@@ -512,7 +513,7 @@ function creditTiles(id){
   return `<div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > have ? 'short' : ''}" data-mvotecred="${id}" data-n="${n}" ${open ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
     <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(have) })) : ''} <button class="linkbtn" data-act="credits">${esc(t('cr_buy'))}</button></p>`;
 }
-const credBtn = (id, hot) => `<button class="btn mcredb ${hot ? 'hot' : ''}" data-mcredopen="${id}" ${missVoteOpen() ? '' : 'disabled'} title="${esc(t('vote_credits'))}" aria-label="${esc(t('vote_credits'))}">💎</button>`;
+const credBtn = id => `<button class="btn mcredb" data-mcredopen="${id}" ${missVoteOpen() ? '' : 'disabled'} title="${esc(t('vote_credits'))}" aria-label="${esc(t('vote_credits'))}">💎</button>`;
 function openMissCreditVote(id){ // quick credit-vote popup from the board
   if (!state.user) return openLogin();
   const c = state.miss?.board.find(x => x.id === id); if (!c) return;
