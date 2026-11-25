@@ -709,6 +709,27 @@
   .pill.idst-verified{background:#d8f5e3;color:#11643a}
   .pill.idst-rejected{background:#fde0e0;color:#9b1c1c}
   .pill.idst-submitted{background:#fff1cc;color:#7a5600}
+  .vs-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .vs-head h3,.vs-head h4{margin:0}
+  .vs-head .chip{margin-left:4px}
+  .vs-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 12px}
+  .vs-tile{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;background:var(--card)}
+  .vs-tile b{font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .vs-box{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+  .vs-bars{display:flex;align-items:flex-end;gap:3px;height:150px;margin-top:10px;padding-top:16px}
+  .vs-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;cursor:default}
+  .vs-col i{display:block;width:100%;max-width:26px;background:var(--accent);border-radius:4px 4px 0 0;opacity:.85}
+  .vs-col:hover i{opacity:1}
+  .vs-num{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:2px}
+  .vs-day{font-size:10px;color:var(--muted);margin-top:4px;border-top:1px solid var(--line);width:100%;text-align:center;padding-top:2px}
+  .vs-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .vs-grid .vs-box{margin:0}
+  .vs-box h4.sec{margin-top:0}
+  .vs-t{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  .vs-t td{padding:5px 2px;border-top:1px solid var(--line)}
+  .vs-t tr:first-child td{border-top:0}
+  .vs-t td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  @media (max-width:640px){ .vs-tiles{grid-template-columns:1fr 1fr} .vs-grid{grid-template-columns:1fr} .vs-bars{height:120px} .vs-num{display:none} }
   .mleads{display:grid;gap:6px}
   .mlead{display:flex;gap:10px;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
   .mlead.done{opacity:.55}
