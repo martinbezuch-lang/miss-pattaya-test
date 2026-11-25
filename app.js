@@ -1032,6 +1032,10 @@ const showGeoBlock = () => { $('#app').innerHTML = `<div class="empty" style="pa
 /* ---------------- start ---------------- */
 try {
   api = DEMO ? makeDemoApi() : await makeSupabaseApi();
+  if (IS_TEST && api.mode === 'demo'){ // test copy: ?koniec=6 → the round ends in 6 minutes (to watch the final countdown)
+    const q = new URLSearchParams(location.search), m = Number(q.get('koniec'));
+    if (m > 0){ await api.missSaveSettings({ round_ends_at: new Date(Date.now() + m * 6e4).toISOString(), voting_open: true }); q.delete('koniec'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
+  }
   applyStaticText();
   await loadAuth();
   renderUser();
