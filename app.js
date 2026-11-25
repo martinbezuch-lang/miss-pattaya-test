@@ -577,9 +577,27 @@ async function adminSetPhoto(id, f){
   } catch(err){ toast(errMsg(err) || t('photo_fail'), true); return false; }
 }
 document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('[data-adph]'); if (el){ const f = el.files[0]; el.value = ''; adminSetPhoto(Number(el.dataset.adph), f); } });
+/* Credit packages – one price for the whole world (USD) */
+const CREDIT_PACKS = [
+  { n: 10, usd: 2.99 }, { n: 50, usd: 9.99 }, { n: 100, usd: 17.99, top: true },
+  { n: 200, usd: 29.99 }, { n: 500, usd: 59.99 }, { n: 1000, usd: 99.99 }];
+const usd = v => new Intl.NumberFormat(LOCALE[LANG], { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 function openMissCredits(){
-  openModal(`<h2>${t('cr_title')}</h2><p class="sub">${t('cr_text')}</p>
-    <div class="box"><b>${t('cr_soon')}</b><p class="small" style="margin:6px 0 0">${esc(t('cr_soon_text', { n: creditsTxt(state.miss?.credits ?? 0) }))}</p></div>`);
+  const base = CREDIT_PACKS[0].usd / CREDIT_PACKS[0].n;
+  openModal(`<h2>💎 ${t('cr_title')}</h2><p class="sub">${t('cr_text')}</p>
+    ${state.user ? `<p class="small" style="margin:0 0 10px">${esc(t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) }))}</p>` : ''}
+    <div class="crpacks">${CREDIT_PACKS.map(p => { const per = p.usd / p.n, off = Math.round((1 - per / base) * 100);
+      return `<button class="crpack ${p.top ? 'top' : ''}" data-crbuy="${p.n}">
+        ${p.top ? `<i class="crtag">${esc(t('cr_popular'))}</i>` : off > 0 ? `<i class="croff">−${off} %</i>` : ''}
+        <b class="crn">💎 ${p.n}</b><span class="crp">${usd(p.usd)}</span><span class="small">${esc(t('cr_per', { p: usd(per) }))}</span></button>`; }).join('')}</div>
+    <p class="small" style="margin:10px 0 0">${esc(t('cr_pay_soon'))}</p>`);
+}
+async function buyCredits(n){
+  if (!state.user) return openLogin();
+  if (api.mode !== 'demo') return toast(t('cr_pay_soon'));
+  await api.missGrant(state.user.email, n); // demo only: credits are added without payment
+  toast(t('cr_demo_added', { n: creditsTxt(n) }));
+  closeModal(); await loadMiss(); renderMiss();
 }
 /* "Enter the competition" is a 3-step flow: account → short profile → entry form */
 const joinIntent = { get: () => { try { return sessionStorage.getItem('mp_join') === '1'; } catch { return false; } },
@@ -860,6 +878,7 @@ document.addEventListener('click', async e => {
   if (d.mopen){ if (location.hash === '#c-' + d.mopen) openMissProfile(Number(d.mopen)); else location.hash = 'c-' + d.mopen; return; }
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
   if (d.mcredopen) return openMissCreditVote(Number(d.mcredopen));
+  if (d.crbuy) return buyCredits(Number(d.crbuy));
   if (d.mvotecred){ // credit votes: first click arms the button, second click confirms
     const n = Number(d.n); if (!(n > 0)) return;
     if (!state.user) return openLogin();
@@ -923,16 +942,24 @@ new MutationObserver(() => { if ($('#modal').hidden && /^#(c|miss)-/.test(locati
 
 /* ---------------- temporary country block (admins are let through) ---------------- */
 const GEO_BLOCK = { countries: [], until: '2026-11-28T09:45:00Z' }; // Thailand unblocked 25. 11. – put ['TH'] back to block again
+let ccPromise = null;
+function visitorCountry(){ // country from the IP address ('' if unknown); ?geo=XX forces a country for testing
+  return ccPromise ||= (async () => {
+    const test = new URLSearchParams(location.search).get('geo'); if (test) return test.toUpperCase();
+    try { const c = sessionStorage.getItem('mp_cc'); if (c) return c; } catch {}
+    try {
+      const ctl = new AbortController(); setTimeout(() => ctl.abort(), 4000);
+      const r = await fetch('https://get.geojs.io/v1/ip/country.json', { signal: ctl.signal, cache: 'no-store' });
+      const c = String((await r.json()).country || '').toUpperCase();
+      try { sessionStorage.setItem('mp_cc', c); } catch {}
+      return c;
+    } catch { return ''; }
+  })();
+}
 async function geoBlocked(){
-  if (!GEO_BLOCK.until || Date.now() > Date.parse(GEO_BLOCK.until)) return false;
-  const test = new URLSearchParams(location.search).get('geo');
-  let cc = test;
-  if (!cc) try {
-    const ctl = new AbortController(); setTimeout(() => ctl.abort(), 4000);
-    const r = await fetch('https://get.geojs.io/v1/ip/country.json', { signal: ctl.signal, cache: 'no-store' });
-    cc = (await r.json()).country;
-  } catch { return false; } // if the lookup fails, let the visitor in
-  return GEO_BLOCK.countries.includes(String(cc || '').toUpperCase());
+  if (!GEO_BLOCK.countries.length || !GEO_BLOCK.until || Date.now() > Date.parse(GEO_BLOCK.until)) return false;
+  const cc = await visitorCountry(); // if the lookup fails, let the visitor in
+  return !!cc && GEO_BLOCK.countries.includes(cc);
 }
 function privateGate(){ // private copy: only admins get past the sign-in screen
   if (!CONFIG.PRIVATE || realAdmin()) return false;
