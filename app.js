@@ -158,7 +158,7 @@ function makeDemoApi(){
     async missVote(uid, id, credits){
       const st = store.get(K.set), c = store.get(K.c, []).find(x => x.id === id), n = credits || 0, vs = store.get(K.v, []);
       if (!st.voting_open) throw new Error('E:VOTING_CLOSED');
-      if (st.round_ends_at && Date.parse(st.round_ends_at) < Date.now() && !isAdm()) throw new Error('E:ROUND_ENDED');
+      if (st.round_ends_at && Date.parse(st.round_ends_at) < Date.now()) throw new Error('E:ROUND_ENDED');
       if (!n){ const last = vs.filter(v => v.user_id === uid && v.round === c.round && v.group_no === c.group_no && !v.paid).map(v => v.created_at).sort().pop();
         if (last && Date.now() - Date.parse(last) < st.vote_hours * 36e5 && !isAdm()) throw new Error('E:COOLDOWN|' + new Date(Date.parse(last) + st.vote_hours * 36e5).toISOString()); }
       else { const w = store.get(K.w, {}); if ((w[uid] || 0) < n) throw new Error('E:NO_CREDITS'); w[uid] -= n; store.set(K.w, w); }
@@ -322,6 +322,7 @@ function clockInner(ms){
 }
 function fmtDur(ms){ const h = Math.floor(ms / 36e5), d = Math.floor(h / 24); return d >= 1 ? t('dur_d', { d, h: h % 24 }) : fmtLeft(ms); }
 function missCooldown(group){
+  if (missEnded()) return null; // no "next vote in" timers once the round is over
   const m = state.miss, hrs = m.st.vote_hours * 36e5;
   const mine = m.myVotes.filter(v => v.group_no === group && !v.paid).sort((a, b) => a.created_at < b.created_at ? 1 : -1)[0];
   if (!mine) return null;
@@ -412,7 +413,7 @@ function missFavView(){
     <p class="small" style="margin:8px 0 0">${t('fav_note')}</p>`;
 }
 function missCountTxt(){ const left = missEndsLeft(); return left ? fmtHMS(left) : missEnded() ? t('round_ended') : ''; }
-let missWasEnded = null, missPrevLeft = null;
+let missWasEnded = null, missPrevLeft = null, missEndPending = false;
 const CLOCK_ALERTS = [60, 50, 40, 30, 20, 10, 5, 4, 3, 2, 1.5]; // minutes before the round ends
 setInterval(() => { // every second: round clock, "next vote in" timers; re-render when a timer runs out
   if (!state.miss) return;
@@ -429,7 +430,9 @@ setInterval(() => { // every second: round clock, "next vote in" timers; re-rend
       toast('⏰ ' + t('t_left', { d: hit >= 5 ? fmtLeft(hit * 6e4) : fmtHMS(hit * 6e4), r: state.miss.st.current_round })); }
     hc.classList.toggle('final', left <= 6e4);
   }
-  const ended = missEnded(); if (missWasEnded === false && ended) stale = true; missWasEnded = ended;
+  const ended = missEnded(); if (missWasEnded === false && ended){ stale = true; missEndPending = true; } missWasEnded = ended;
+  if (ended) document.querySelectorAll('[data-mvote],[data-mvotecred],[data-mcredopen]').forEach(b => { b.disabled = true; }); // even inside an open window
+  if (missEndPending && $('#modal').hidden && !document.querySelector('.cropov')){ missEndPending = false; stale = true; }
   if (stale && $('#modal').hidden && !document.querySelector('.cropov')) renderMiss();
 }, 1000);
 function missMiniTable(c, noHead){
