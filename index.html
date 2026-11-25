@@ -407,7 +407,7 @@
     .tools-right #dvSearch{flex:1 1 100%}
     .trow .chart-txt{white-space:normal}
   }
-  @media (max-width:430px){ .logo .lt{display:none} .badge{display:none} }
+  @media (max-width:430px){ .logo .lt{display:none} .badge:not(.admtog){display:none} }
 
   /* MISS */
   .nav a.miss-tab{color:#c2255c}
@@ -577,6 +577,8 @@
   .crtag,.croff{position:absolute;top:-9px;left:50%;transform:translateX(-50%);white-space:nowrap;font-style:normal;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:99px;color:#fff;background:linear-gradient(135deg,#ff5f8f,#ff9a5a)}
   .croff{background:#22a06b}
   @media (max-width:480px){.crpacks{grid-template-columns:repeat(2,1fr)}}
+  .admtog{cursor:pointer;border:1px solid transparent;padding:4px 10px;font:inherit;font-size:12px;font-weight:800;letter-spacing:.06em;transition:background .15s,color .15s,border-color .15s}
+  .admtog.off{background:transparent;color:var(--muted);border:1px solid var(--line);box-shadow:none}
   .linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
   .mfavs{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;margin-top:10px}
   .mfav{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column}
