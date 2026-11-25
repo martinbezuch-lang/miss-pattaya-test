@@ -333,29 +333,32 @@ function missPos(id){
   return { c, rank, size: list.length, adv, advancing: rank <= adv, need, lead };
 }
 function missEndsLeft(){ const e = Date.parse(state.miss?.st.round_ends_at || ''); return e && e > Date.now() ? e - Date.now() : null; }
-function missShareText(id){
+function missShareText(id, own){
   const p = missPos(id); if (!p) return '';
   const name = p.c.first_name, r = state.miss.st.current_round, left = missEndsLeft();
   const tt = left ? t('t_left', { d: fmtDur(left), r }) : t('t_running', { r });
-  if (!p.advancing) return t('share_out', { name, t: tt, p: place(p.rank), a: place(p.adv) });
-  if (p.rank === 1) return t('share_lead', { name, t: tt, title: state.miss.st.title });
-  return t('share_mid', { name, t: tt, p: place(p.rank) });
+  const at = n => T[LANG].place_loc ? t('place_loc', { o: ord(n) }) : place(n); // "na 3. mieste"
+  const k = own ? 'so_' : 'share_';
+  if (!p.advancing) return t(k + 'out', { name, t: tt, p: at(p.rank), a: place(p.adv) });
+  if (p.rank === 1) return t(k + 'lead', { name, t: tt, title: state.miss.st.title });
+  return t(k + 'mid', { name, t: tt, p: at(p.rank) });
 }
 const missUrl = id => `${location.origin}${location.pathname}#c-${id}`;
 function missShareBox(id, own){
-  const txt = missShareText(id), url = missUrl(id), full = `${txt}\n${url}`, e = encodeURIComponent;
+  const txt = missShareText(id, own), url = missUrl(id), full = `${txt}\n${url}`, e = encodeURIComponent, o = own ? '1' : '';
   const mob = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  return `<div class="box" style="margin-top:12px"><b>${own ? t('share_own') : t('share_help')}</b>
-    <div class="mshare-txt">${esc(txt)}</div>
+  return `<div class="box" style="margin-top:12px"><b>${own ? t('sh_me_t') : t('share_help')}</b>
+    ${own ? `<p class="small" style="margin:4px 0 0">${esc(t('sh_me_s'))}</p>` : ''}
+    <div class="mshare-txt" data-mcopy="${id}" data-own="${o}" role="button" tabindex="0" title="${esc(t('copy_tap'))}">${esc(txt)}<span class="mshare-hint">📋 ${esc(t('copy_tap'))}</span></div>
     <div class="mshare">
-      ${navigator.share ? `<button class="btn primary" data-mshare="${id}">${t('share_btn')}</button>` : ''}
+      ${navigator.share ? `<button class="btn primary" data-mshare="${id}" data-own="${o}">${t('share_btn')}</button>` : ''}
       <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${e(full)}">WhatsApp</a>
       ${mob ? `<a class="btn" href="fb-messenger://share/?link=${e(url)}">Messenger</a>` : ''}
       <a class="btn" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${e(url)}">Facebook</a>
       <a class="btn" target="_blank" rel="noopener" href="https://t.me/share/url?url=${e(url)}&text=${e(txt)}">Telegram</a>
       <a class="btn" target="_blank" rel="noopener" href="https://line.me/R/share?text=${e(full)}">LINE</a>
       <a class="btn" target="_blank" rel="noopener" href="https://x.com/intent/tweet?text=${e(txt)}&url=${e(url)}">X</a>
-      <button class="btn" data-mcopy="${id}">${t('copy_text')}</button></div>
+      <button class="btn" data-mcopy="${id}" data-own="${o}">${t('copy_text')}</button></div>
     <p class="small" style="margin:6px 0 0">${t('ig_hint')}</p></div>`;
 }
 function missPosLine(p){
@@ -501,6 +504,7 @@ function missGroup(g){
         <button class="btn ${mineHere ? '' : 'primary'} mvote" data-mvote="${c.id}" ${cd || !missVoteOpen() ? 'disabled' : ''}>${mineHere ? t('your_vote') : missEnded() ? t('round_ended') : t('vote')}</button>
       </div>`; }).join('')}</div></section>`;
 }
+const CREDIT_STEPS = [10, 50, 100, 200, 500, 1000];
 async function onMissVote(id, credits){
   if (!state.user) return openLogin();
   if (!state.profile) return openProfile();
@@ -534,11 +538,10 @@ async function openMissProfile(id){
       ${c.about ? `<p style="white-space:pre-line;margin:10px 0">${esc(c.about)}</p>` : ''}
       <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div>
       ${inRound ? `<div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
-        <div class="actions" style="justify-content:flex-start;flex-wrap:wrap;margin-top:8px">
-          <button class="btn primary" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote_free')}</button>
-          <input type="number" id="mcred" min="1" max="100000" value="10" class="search" style="width:90px" aria-label="${esc(t('credits'))}">
-          <button class="btn" data-mvotecred="${c.id}" ${missVoteOpen() ? '' : 'disabled'}>${t('vote_credits')}</button></div>
-        <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) })) : ''}</p></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
+        <button class="btn primary mvbig" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote')}</button>
+        <p class="small" style="margin:10px 0 6px">${esc(t('cr_or'))}</p>
+        <div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > (state.miss?.credits ?? 0) ? 'short' : ''}" data-mvotecred="${c.id}" data-n="${n}" ${missVoteOpen() ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
+        <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) })) : ''} <button class="linkbtn" data-act="credits">${esc(t('cr_buy'))}</button></p></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
       <p class="small" style="margin-top:10px">${t('profile_link')} <a href="#c-${c.id}">${esc(missUrl(c.id))}</a></p>
     </div></div>`, true);
   $('#adPhoto')?.addEventListener('change', async e => { if (await adminSetPhoto(c.id, e.target.files[0])) openMissProfile(c.id); });
@@ -833,19 +836,31 @@ window.addEventListener('hashchange', route);
 /* ---------------- events ---------------- */
 document.addEventListener('click', async e => {
   if (e.target.id === 'modal') return closeModal();
-  const tg = e.target.closest('button, [data-close], [data-act]');
+  const tg = e.target.closest('button, [data-close], [data-act], [data-mcopy]');
   if (!tg) return;
   if (tg.hasAttribute('data-close')) return closeModal();
   const d = tg.dataset;
   if (d.mopen){ if (location.hash === '#c-' + d.mopen) openMissProfile(Number(d.mopen)); else location.hash = 'c-' + d.mopen; return; }
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
-  if (d.mvotecred){ const n = Math.floor(Number($('#mcred').value)); if (!(n > 0)) return; if (await onMissVote(Number(d.mvotecred), n)) closeModal(); return; }
+  if (d.mvotecred){ // credit votes: first click arms the button, second click confirms
+    const n = Number(d.n); if (!(n > 0)) return;
+    if (!state.user) return openLogin();
+    if (n > (state.miss?.credits ?? 0)){ toast(`${errMsg(new Error('E:NO_CREDITS'))} ${t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) })}`, true); return; }
+    if (!tg.classList.contains('arm')){
+      document.querySelectorAll('.mcbtn.arm').forEach(b => { b.classList.remove('arm'); b.textContent = '+' + b.dataset.n; });
+      tg.classList.add('arm'); tg.textContent = t('cr_confirm', { n });
+      setTimeout(() => { if (tg.isConnected && tg.classList.contains('arm')){ tg.classList.remove('arm'); tg.textContent = '+' + n; } }, 4000);
+      return;
+    }
+    tg.disabled = true;
+    if (await onMissVote(Number(d.mvotecred), n)) closeModal(); else if (tg.isConnected){ tg.disabled = false; tg.classList.remove('arm'); tg.textContent = '+' + n; }
+    return; }
   if (d.mfav){ const on = missToggleFav(Number(d.mfav)); toast(on ? t('fav_added') : t('fav_removed')); renderMiss(); return; }
   if (d.mflag){ state.missFlag = state.missFlag === d.mflag ? null : d.mflag; state.missView = 'all'; closeModal(); renderMiss(); return; }
   if (d.mlayout){ store.set('mp_layout', d.mlayout); renderMiss(); return; }
   if (d.mview){ state.missView = d.mview; renderMiss(); return; }
-  if (d.mshare){ const id = Number(d.mshare); try { await navigator.share({ title: state.miss.st.title, text: missShareText(id), url: missUrl(id) }); } catch {} return; }
-  if (d.mcopy){ const id = Number(d.mcopy); try { await navigator.clipboard.writeText(`${missShareText(id)}\n${missUrl(id)}`); toast(t('copied')); } catch { toast(t('copy_fail'), true); } return; }
+  if (d.mshare){ const id = Number(d.mshare); try { await navigator.share({ title: state.miss.st.title, text: missShareText(id, d.own === '1'), url: missUrl(id) }); } catch {} return; }
+  if (d.mcopy){ const id = Number(d.mcopy); try { await navigator.clipboard.writeText(`${missShareText(id, d.own === '1')}\n${missUrl(id)}`); toast(t('copied')); const box = tg.closest('.box')?.querySelector('.mshare-txt'); if (box){ box.classList.add('copied'); setTimeout(() => box.classList.remove('copied'), 1200); } } catch { toast(t('copy_fail'), true); } return; }
   if (d.mpage){ state.missPage = Number(d.mpage); renderMiss(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if (d.mst){ try { await api.missSetStatus(Number(d.id), d.mst); toast(d.mst === 'approved' ? t('ad_approved') : t('ad_rejected')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return; }
   switch (d.act){
