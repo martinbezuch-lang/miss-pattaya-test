@@ -226,7 +226,13 @@ function makeDemoApi(){
     async signIdPhotos(paths){ return paths.map(p => ({ path: p, signedUrl: p })); },
     async saveIdDocs(uid, doc, selfie){ const l = store.get(K.c, []), c = l.find(x => x.user_id === uid); if (c){ c.id_doc_path = doc; c.id_selfie_path = selfie; c.id_status = 'submitted'; store.set(K.c, l); } },
     async missIdQueue(){ return store.get(K.c, []).filter(c => c.id_status === 'submitted'); },
-    async missSetId(id, st){ const l = store.get(K.c, []), c = l.find(x => x.id === id); if (c){ c.id_status = st; store.set(K.c, l); } }
+    async missSetId(id, st){ const l = store.get(K.c, []), c = l.find(x => x.id === id); if (c){ c.id_status = st; store.set(K.c, l); } },
+    /* in-app notification history */
+    notesOn: true,
+    async notes(){ return store.get('mp_notes', []); },
+    async noteAdd(n){ const l = store.get('mp_notes', []); l.unshift({ id: Date.now(), title: n.title, body: n.body || null, url: null, created_at: new Date().toISOString() }); store.set('mp_notes', l.slice(0, 40)); },
+    async notesSeenAt(){ return store.get('mp_notes_seen', null); },
+    async notesSeen(){ store.set('mp_notes_seen', new Date().toISOString()); }
   };
 }
 
@@ -297,7 +303,14 @@ async function makeSupabaseApi(){
     async signIdPhotos(paths){ return chk(await sb.storage.from('miss-id').createSignedUrls(paths, 600)); },
     async saveIdDocs(uid, doc, selfie){ chk(await sb.from('miss_contestants').update({ id_doc_path: doc, id_selfie_path: selfie }).eq('user_id', uid)); },
     async missIdQueue(){ return chk(await sb.from('miss_contestants').select('*').eq('id_status', 'submitted').order('created_at')); },
-    async missSetId(id, st){ chk(await sb.from('miss_contestants').update({ id_status: st }).eq('id', id)); }
+    async missSetId(id, st){ chk(await sb.from('miss_contestants').update({ id_status: st }).eq('id', id)); },
+    /* in-app notification history (needs notifikacie.sql; until then notesOn stays false) */
+    notesOn: false,
+    async notes(){ const r = await sb.from('miss_notes').select('id,title,body,url,created_at').order('created_at', { ascending:false }).limit(40);
+      this.notesOn = !r.error; return r.error ? [] : r.data; },
+    async noteAdd(n){ chk(await sb.from('miss_notes').insert({ title: n.title, body: n.body || null })); },
+    async notesSeenAt(){ return state.profile?.notes_seen_at || null; },
+    async notesSeen(){ chk(await sb.rpc('miss_notes_seen')); }
   };
 }
 
@@ -319,7 +332,8 @@ async function loadMiss(){
   const mine = state.user ? await Promise.all([api.myMissVotes(state.user.id, st.current_round).catch(() => []), api.missWallet(state.user.id).catch(() => 0), api.myContestant(state.user.id).catch(() => null)]) : [[], 0, null];
   await signPhotos([...board.map(c => c.photo_path), mine[2]?.photo_path]);
   const gifts = mine[2]?.id ? await api.myGifts(mine[2].id).catch(() => []) : [];
-  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2], gifts };
+  const notes = state.user ? await api.notes().catch(() => []) : [], notesSeen = state.user ? await api.notesSeenAt().catch(() => null) : null;
+  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2], gifts, notes, notesSeen };
   const fav = missFavs(); let ch = false;
   for (const v of state.miss.myVotes){ const id = Number(v.contestant_id); if (!fav.includes(id) && !missUnfav().includes(id)){ fav.push(id); ch = true; } }
   if (ch) store.set('mp_fav', fav);
@@ -338,7 +352,7 @@ function renderUser(){
   const theme = `<button class="theme-btn" data-act="theme" title="${esc(dark ? t('theme_light') : t('theme_dark'))}" aria-label="${esc(dark ? t('theme_light') : t('theme_dark'))}">${dark ? ICON_SUN : ICON_MOON}</button>`;
   $('#userArea').innerHTML = lang + theme + (state.user
     ? `${realAdmin() ? `<button class="badge admtog ${state.asUser ? 'off' : ''}" data-act="asuser" title="${esc(state.asUser ? t('view_user') : t('view_admin'))}" aria-pressed="${!state.asUser}">${t('admin')}</button>` : ''}
-       ${state.miss?.me?.id ? (u => `<button class="hbell" data-act="gifts" title="${esc(t('gf_title'))}" aria-label="${esc(t('gf_title'))}">🔔${u ? `<i>${u}</i>` : ''}</button>`)((state.miss.gifts || []).filter(g => !g.seen).length) : ''}
+       ${api.notesOn || state.miss?.me?.id ? (u => `<button class="hbell" data-act="gifts" title="${esc(t('gf_title'))}" aria-label="${esc(t('gf_title'))}">🔔${u ? `<i>${u}</i>` : ''}</button>`)(notesUnread()) : ''}
        <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
        <button class="btn ghost" data-act="profile" title="${esc(t('profile'))}" aria-label="${esc(t('profile'))}"><span class="uic">${ICON_USER}</span><span class="ulb">${t('profile')}</span></button><button class="btn" data-act="logout" title="${esc(t('logout'))}" aria-label="${esc(t('logout'))}"><span class="uic">${ICON_OUT}</span><span class="ulb">${t('logout')}</span></button>`
     : `<button class="btn primary" data-act="login">${t('login')}</button>`);
@@ -522,7 +536,6 @@ function renderMiss(){
   let cta = '';
   if (m.me) cta = `<button class="btn primary" data-act="signup">${t('my_entry')}</button> <span class="pill">${t('st_' + m.me.status)}</span>`;
   else if (regOpen && (!state.user || !state.profile || isWoman)) cta = `<button class="btn primary" data-act="signup">${leadStore.get() || store.get('mp_draft', null) ? t('su_finish') : t('join')}</button>`;
-  else if (regOpen) cta = `<span class="small">${t('women_only')}</span>`;
   const pager = pages > 1 ? `<div class="pager">${Array.from({ length: pages }, (_, i) => `<button class="chip ${state.missPage === i + 1 ? 'on' : ''}" data-mpage="${i + 1}">${i + 1}</button>`).join('')}</div>` : '';
   const fb = view === 'all' ? missFlagBar() : { chips: '', note: '' };
   el.innerHTML = `
@@ -699,7 +712,7 @@ async function pushEnable(){
     const reg = await swReady();
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(CONFIG.VAPID_PUBLIC) });
     await api.pushSave(sub.toJSON(), LANG);
-    toast(t('pu_done')); renderPushBox();
+    toast(t('pu_done')); if ($('.pask') || $('.ntpush')) closeModal(); renderPushBox();
   } catch(err){ toast(errMsg(err), true); }
 }
 async function renderPushBox(){ // small invitation under the header for signed-in visitors
@@ -708,20 +721,46 @@ async function renderPushBox(){ // small invitation under the header for signed-
   if (st === 'on' && state.user && Notification.permission === 'granted'){ // keep the subscription linked to this account and language
     try { const sub = await (await swReady()).pushManager.getSubscription(); if (sub && !sessionStorage.getItem('mp_psync')){ await api.pushSave(sub.toJSON(), LANG); sessionStorage.setItem('mp_psync', '1'); } } catch {}
   }
-  const hidden = Date.now() < Number(store.get('mp_push_later', 0));
-  el.innerHTML = (st === 'off' || st === 'ios') && !hidden ? `<div class="pushbox"><span>🔔 ${esc(t('pu_ask'))}</span>${st === 'ios' ? `<span class="small">${esc(t('pu_ios'))}</span>` : `<button class="btn primary" data-act="pushon">${esc(t('pu_on'))}</button>`}<button class="pushx" data-act="pushlater" aria-label="✕">✕</button></div>` : '';
+  el.innerHTML = ''; // no banner any more: the bell window and a one-time friendly ask (openPushAsk) invite instead
+  if (state.user && state.profile && !store.get('mp_push_asked', 0) && (st === 'off' || st === 'ios'))
+    setTimeout(() => { if ($('#modal').hidden && !store.get('mp_push_asked', 0)) openPushAsk(); }, 2500);
 }
-function giftsToast(){ // contestant: once per visit, tell her about unread praise
-  const n = (state.miss?.gifts || []).filter(g => !g.seen).length;
+async function openPushAsk(){
+  const st = await pushState(); store.set('mp_push_asked', Date.now());
+  if (st === 'on' || st === 'na') return;
+  if (st === 'denied') return toast(t('pu_denied'), true);
+  if (st === 'ios') return openModal(`<div class="pask"><div class="pask-ic">🔔</div><h2>${esc(t('pa_title'))}</h2><p class="sub">${esc(t('pa_ios_t'))}</p>
+    <ol class="pask-steps"><li>${esc(t('pa_ios1'))}</li><li>${esc(t('pa_ios2'))}</li><li>${esc(t('pa_ios3'))}</li></ol>
+    <div class="actions" style="justify-content:center"><button type="button" class="btn primary" data-close>${esc(t('pa_ok'))}</button></div></div>`);
+  openModal(`<div class="pask"><div class="pask-ic">🔔</div><h2>${esc(t('pa_title'))}</h2><p class="sub">${esc(t('pa_text'))}</p>
+    <ul class="pask-list"><li>⏳ ${esc(t('pa_b1'))}</li><li>🔥 ${esc(t('pa_b2'))}</li><li>💬 ${esc(t('pa_b3'))}</li></ul>
+    <div class="actions" style="justify-content:center"><button type="button" class="btn ghost" data-close>${esc(t('pa_later'))}</button><button type="button" class="btn primary" data-act="pushon">${esc(t('pu_on'))}</button></div></div>`);
+}
+const notesUnread = () => { const m = state.miss; if (!m) return 0; const seen = Date.parse(m.notesSeen || 0) || 0;
+  return (m.notes || []).filter(n => Date.parse(n.created_at) > seen).length + (m.gifts || []).filter(g => !g.seen).length; };
+function giftsToast(){ // once per visit: tell about unread notifications
+  const n = notesUnread();
   if (n && !sessionStorage.getItem('mp_gtoast')){ try { sessionStorage.setItem('mp_gtoast', '1'); } catch {} toast('🔔 ' + t('gf_new', { n })); }
 }
-async function openGifts(){
-  const me = state.miss?.me; if (!me?.id) return;
-  const list = await api.myGifts(me.id).catch(() => state.miss.gifts || []);
-  openModal(`<h2>🔔 ${esc(t('gf_title'))}</h2>${list.length ? `<div class="glist">${list.map(g => `<div class="gitem ${g.seen ? '' : 'new'}">
+async function openGifts(){ // the bell: notification history (announcements + praise) and the push switch
+  const m = state.miss, me = m?.me; if (!m || !state.user) return;
+  const list = me?.id ? await api.myGifts(me.id).catch(() => m.gifts || []) : [];
+  const seen = Date.parse(m.notesSeen || 0) || 0;
+  const items = [...(m.notes || []).map(n => ({ at: Date.parse(n.created_at), html: `<div class="gitem ${Date.parse(n.created_at) > seen ? 'new' : ''}">
+      <div><b>${esc(n.title)}</b>${n.body ? `<div class="gmsg">${esc(n.body)}</div>` : ''}</div><span class="small">${esc(fmtDateTime(n.created_at))}</span></div>` })),
+    ...list.map(g => ({ at: Date.parse(g.created_at), html: `<div class="gitem ${g.seen ? '' : 'new'}">
       <div><b>💎 ${g.credits}</b> · ${esc(g.nick)} ${g.country ? flagOf(g.country) : ''}${g.msg && GIFT_MSGS.includes(g.msg) ? `<div class="gmsg">„${esc(t(g.msg))}“</div>` : ''}</div>
-      <span class="small">${esc(fmtDateTime(g.created_at))}</span></div>`).join('')}</div>` : `<p class="sub">${esc(t('gf_empty'))}</p>`}`);
-  if (list.some(g => !g.seen)){ await api.giftsSeen(me.id).catch(() => {}); state.miss.gifts = list.map(g => ({ ...g, seen: true })); renderUser(); }
+      <span class="small">${esc(fmtDateTime(g.created_at))}</span></div>` }))].sort((a, b) => b.at - a.at);
+  const ps = await pushState();
+  const pushRow = ps === 'on' ? `<p class="small ntok">✓ ${esc(t('nt_push_on'))}</p>`
+    : ps === 'off' ? `<div class="ntpush"><span>📱 ${esc(t('nt_push_off'))}</span><button type="button" class="btn primary" data-act="pushon">${esc(t('pu_on'))}</button></div>`
+    : ps === 'ios' ? `<div class="ntpush"><span>📱 ${esc(t('nt_push_off'))}</span><button type="button" class="btn" data-act="pushask">${esc(t('pa_how'))}</button></div>`
+    : ps === 'denied' ? `<p class="small">${esc(t('pu_denied'))}</p>` : '';
+  openModal(`<h2>🔔 ${esc(t('gf_title'))}</h2>${pushRow}${items.length ? `<div class="glist">${items.map(i => i.html).join('')}</div>` : `<p class="sub">${esc(me?.id ? t('gf_empty') : t('nt_empty'))}</p>`}`);
+  const unreadNotes = (m.notes || []).some(n => Date.parse(n.created_at) > seen);
+  if (unreadNotes){ await api.notesSeen().catch(() => {}); m.notesSeen = new Date().toISOString(); if (state.profile) state.profile.notes_seen_at = m.notesSeen; }
+  if (list.some(g => !g.seen)){ await api.giftsSeen(me.id).catch(() => {}); m.gifts = list.map(g => ({ ...g, seen: true })); }
+  renderUser();
 }
 document.addEventListener('click', e => { // social links: free, but only for signed-in visitors
   const a = e.target.closest && e.target.closest('a.msico, .mlinks a');
@@ -1146,7 +1185,7 @@ function openProfile(){
   $('#profileForm').addEventListener('submit', async e => {
     e.preventDefault();
     const data = { gender: document.querySelector('input[name=gender]:checked')?.value, birth_year: Number($('#by').value), country: $('#pco').value, lang: LANG };
-    try { await api.saveProfile(state.user.id, data); await loadAuth(); closeModal(); renderUser(); if (privateGate()) return; await loadMiss(); renderMiss(); if (!continueJoin()) toast(t('pf_saved')); }
+    try { await api.saveProfile(state.user.id, data); await loadAuth(); closeModal(); renderUser(); if (privateGate()) return; await loadMiss(); renderMiss(); if (!continueJoin()){ toast(t('pf_saved')); setTimeout(() => { if ($('#modal').hidden && !store.get('mp_push_asked', 0)) openPushAsk(); }, 1500); } }
     catch(err){ $('#pErr').textContent = errMsg(err); }
   });
 }
@@ -1224,11 +1263,17 @@ document.addEventListener('click', async e => {
     case 'gifts': return openGifts();
     case 'pushon': return pushEnable();
     case 'pushlater': store.set('mp_push_later', Date.now() + 7 * 864e5); return renderPushBox();
+    case 'pushask': return openPushAsk();
     case 'pushsend': {
       const title = $('#pu_t').value.trim(), body = $('#pu_b').value.trim();
       if (!title && !body) return;
       if (!confirmClick(tg, t('ad_push_sure'))) return;
-      try { const r = await api.pushSend({ type: 'broadcast', title, body }); toast(t('ad_push_sent', { n: r.sent ?? 0, m: r.total ?? 0 })); } catch(err){ toast(errMsg(err), true); }
+      try {
+        if (api.notesOn) await api.noteAdd({ title: title || state.miss.st.title, body });
+        let r = { sent: 0, total: 0 }; try { if (api.mode !== 'demo') r = await api.pushSend({ type: 'broadcast', title, body }); } catch(err){ if (!api.notesOn) throw err; toast(errMsg(err), true); }
+        toast(t('ad_push_sent', { n: r.sent ?? 0, m: r.total ?? 0 }) + (api.notesOn ? ' · ' + t('ad_push_saved') : '')); $('#pu_t').value = ''; $('#pu_b').value = '';
+        await loadMiss(); renderUser();
+      } catch(err){ toast(errMsg(err), true); }
       return; }
     case 'togglephotos': { const st = state.miss.st, hide = !photosHidden();
       try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
