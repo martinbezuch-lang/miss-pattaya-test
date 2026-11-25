@@ -12,6 +12,7 @@ const CONFIGS = {
     SUPABASE_URL: 'https://gtblftngzitbiwmrvomj.supabase.co',
     SUPABASE_ANON_KEY: 'sb_publishable_p7mVlg_b_GWr9-XjQBrHBw_qzF6XQlC', // public (publishable) key
     GOOGLE_LOGIN: false, // turn on after enabling Google in Supabase → Authentication → Providers
+    VAPID_PUBLIC: 'BE3jm13klfmX19K1fbHxN4yugceZ-lechHZoClRqpx0G7etCnTGoN15KFlfx4a93bZMcziIdhfMxBbXG1UQv0Cs', // web push (public key – the private one is only in Supabase secrets)
     PRIVATE: false
   },
   test: { // private: only admins of the test database see anything, photos are in a private bucket
@@ -206,7 +207,8 @@ function makeDemoApi(){
       return { round: st.current_round + 1, advanced: adv.length, eliminated: out, groups };
     },
     async missHistory(id){ return store.get(K.res, []).filter(r => r.contestant_id === id).sort((a, b) => a.round - b.round); },
-    async missGrant(email, amount){ const w = store.get(K.w, {}), uid = sess().id; w[uid] = (w[uid] || 0) + amount; store.set(K.w, w); return w[uid]; }
+    async missGrant(email, amount){ const w = store.get(K.w, {}), uid = sess().id; w[uid] = (w[uid] || 0) + amount; store.set(K.w, w); return w[uid]; },
+    async pushSave(){}, async pushSend(){ return { sent: 0, total: 0 }; }
   };
 }
 
@@ -258,6 +260,8 @@ async function makeSupabaseApi(){
     async missSetPhoto(id, path){ const r = chk(await sb.from('miss_contestants').update({ photo_path: path }).eq('id', id).select('id')); if (!r || !r.length) throw new Error('E:ADMIN_ONLY'); },
     async missNewRound(elim, size, pots, ends){ return chk(await sb.rpc('miss_new_round', { p_eliminate:elim, p_group_size:size, p_pots:pots, p_round_ends:ends })); },
     async missGrant(email, amount){ return chk(await sb.rpc('miss_grant_credits', { p_email:email, p_amount:amount })); },
+    async pushSave(sub, lang){ chk(await sb.rpc('miss_push_save', { p_sub:sub, p_lang:lang })); },
+    async pushSend(body){ const { data, error } = await sb.functions.invoke('send-push', { body }); if (error) throw error; return data || {}; },
     async missHistory(id){ return chk(await sb.from('miss_round_results').select('round,group_no,place,votes,advanced').eq('contestant_id', id).order('round')); }
   };
 }
@@ -469,6 +473,7 @@ function missStatsView(){
 const missLayout = () => store.get('mp_layout', 'photo') === 'list' ? 'list' : 'photo';
 function renderMiss(){
   renderUser(); // header shows the credit balance
+  setTimeout(renderPushBox, 0);
   const m = state.miss, st = m.st, el = $('#app');
   const groups = [...new Set(m.board.map(c => c.group_no))].sort((a, b) => a - b);
   const pages = Math.max(1, Math.ceil(groups.length / PER_PAGE));
@@ -484,6 +489,7 @@ function renderMiss(){
   const fb = view === 'all' ? missFlagBar() : { chips: '', note: '' };
   el.innerHTML = `
     ${promoBanner()}
+    <div id="pushBox"></div>
     <section class="mhead">
       <div class="mhead-t"><h1>👑 ${esc(st.title)}</h1>
         <span class="mhead-meta">${esc(t('round_n', { n: st.current_round }))} · ${esc(t('contestants_n', { n: m.board.length }))} · ${esc(t('groups_n', { n: groups.length }))} · ${esc(t('vote_every', { h: st.vote_hours }))} · <button class="mlink" data-act="rules">${t('rules')}</button>${st.voting_open ? '' : ` · <b>${t('voting_paused')}</b>`}</span>
@@ -562,7 +568,7 @@ async function onMissVote(id, credits, gift){
   if (!state.user) return openLogin();
   if (!state.profile) return openProfile();
   try {
-    if (credits && gift) await api.missVoteGift(state.user.id, id, credits, gift.nick, gift.msg);
+    if (credits && gift){ await api.missVoteGift(state.user.id, id, credits, gift.nick, gift.msg); api.pushSend({ type: 'gift' }).catch(() => {}); }
     else await api.missVote(state.user.id, id, credits || 0);
     if (!missFavs().includes(id)) store.set('mp_fav', [...missFavs(), id]);
     toast(credits ? t('votes_added', { n: credits }) + (gift ? ' · 🔔 ' + t('gf_sent') : '') : t('voted'));
@@ -633,6 +639,38 @@ function openMissCredits(){
         ${p.top ? `<i class="crtag">${esc(t('cr_popular'))}</i>` : off > 0 ? `<i class="croff">−${off} %</i>` : ''}
         <b class="crn">💎 ${p.n}</b>${promoBonus(p.n) ? `<span class="crbonus">🎁 ${esc(t('pr_bonus', { n: promoBonus(p.n) }))}</span>` : ''}<span class="crp">${usd(p.usd)}</span><span class="small">${esc(t('cr_per', { p: usd(per) }))}</span></button>`; }).join('')}</div>
     <p class="small" style="margin:10px 0 0">${esc(t('cr_pay_soon'))}</p>`);
+}
+/* ---------------- web push ---------------- */
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent), isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const pushCapable = () => !!(CONFIG.VAPID_PUBLIC && api?.mode !== 'demo' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+let swReg = null;
+async function swReady(){ if (!swReg && 'serviceWorker' in navigator) swReg = await navigator.serviceWorker.register('sw.js').catch(() => null); return swReg; }
+const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function pushState(){ // 'on' | 'off' | 'denied' | 'ios' | 'na'
+  if (isIOS && !isStandalone && CONFIG.VAPID_PUBLIC && api?.mode !== 'demo') return 'ios';
+  if (!pushCapable()) return 'na';
+  if (Notification.permission === 'denied') return 'denied';
+  const reg = await swReady(); const sub = reg && await reg.pushManager.getSubscription();
+  return sub && Notification.permission === 'granted' ? 'on' : 'off';
+}
+async function pushEnable(){
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted'){ toast(t('pu_denied'), true); return renderPushBox(); }
+    const reg = await swReady();
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(CONFIG.VAPID_PUBLIC) });
+    await api.pushSave(sub.toJSON(), LANG);
+    toast(t('pu_done')); renderPushBox();
+  } catch(err){ toast(errMsg(err), true); }
+}
+async function renderPushBox(){ // small invitation under the header for signed-in visitors
+  const el = $('#pushBox'); if (!el) return;
+  const st = state.user ? await pushState() : 'na';
+  if (st === 'on' && state.user && Notification.permission === 'granted'){ // keep the subscription linked to this account and language
+    try { const sub = await (await swReady()).pushManager.getSubscription(); if (sub && !sessionStorage.getItem('mp_psync')){ await api.pushSave(sub.toJSON(), LANG); sessionStorage.setItem('mp_psync', '1'); } } catch {}
+  }
+  const hidden = Date.now() < Number(store.get('mp_push_later', 0));
+  el.innerHTML = (st === 'off' || st === 'ios') && !hidden ? `<div class="pushbox"><span>🔔 ${esc(t('pu_ask'))}</span>${st === 'ios' ? `<span class="small">${esc(t('pu_ios'))}</span>` : `<button class="btn primary" data-act="pushon">${esc(t('pu_on'))}</button>`}<button class="pushx" data-act="pushlater" aria-label="✕">✕</button></div>` : '';
 }
 function giftsToast(){ // contestant: once per visit, tell her about unread praise
   const n = (state.miss?.gifts || []).filter(g => !g.seen).length;
@@ -807,7 +845,13 @@ async function renderMissAdmin(){
       <button class="btn" data-act="grant">${t('ad_grant')}</button>
       <span class="spacer" style="flex:1"></span>
       <button class="btn danger" data-act="newround">${esc(t('ad_close', { r: st.current_round }))}</button></div>
-    <p class="small">${t('ad_close_hint')}</p></div>`;
+    <p class="small">${t('ad_close_hint')}</p>
+    <h4 class="sec" style="margin-top:14px">📣 ${esc(t('ad_push'))}</h4>
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap">
+      <input type="text" id="pu_t" class="search" maxlength="80" placeholder="${esc(t('ad_push_t'))}" style="flex:1;min-width:160px">
+      <input type="text" id="pu_b" class="search" maxlength="300" placeholder="${esc(t('ad_push_b'))}" style="flex:2;min-width:200px">
+      <button class="btn primary" data-act="pushsend">${esc(t('ad_push_go'))}</button></div>
+    <p class="small">${esc(t('ad_push_hint'))}</p></div>`;
   $('#missSet').addEventListener('submit', async e => {
     e.preventDefault();
     try { await api.missSaveSettings({ title: $('#mst_t').value.trim() || 'MISS of Pattaya', registration_until: new Date($('#mst_r').value).toISOString(), voting_open: $('#mst_o').checked,
@@ -986,6 +1030,14 @@ document.addEventListener('click', async e => {
     case 'signup': return openMissSignup();
     case 'credits': return openMissCredits();
     case 'gifts': return openGifts();
+    case 'pushon': return pushEnable();
+    case 'pushlater': store.set('mp_push_later', Date.now() + 7 * 864e5); return renderPushBox();
+    case 'pushsend': {
+      const title = $('#pu_t').value.trim(), body = $('#pu_b').value.trim();
+      if (!title && !body) return;
+      if (!confirmClick(tg, t('ad_push_sure'))) return;
+      try { const r = await api.pushSend({ type: 'broadcast', title, body }); toast(t('ad_push_sent', { n: r.sent ?? 0, m: r.total ?? 0 })); } catch(err){ toast(errMsg(err), true); }
+      return; }
     case 'togglephotos': { const st = state.miss.st, hide = !photosHidden();
       try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
       return; }
