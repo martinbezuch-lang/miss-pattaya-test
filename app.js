@@ -483,6 +483,7 @@ function renderMiss(){
   const pager = pages > 1 ? `<div class="pager">${Array.from({ length: pages }, (_, i) => `<button class="chip ${state.missPage === i + 1 ? 'on' : ''}" data-mpage="${i + 1}">${i + 1}</button>`).join('')}</div>` : '';
   const fb = view === 'all' ? missFlagBar() : { chips: '', note: '' };
   el.innerHTML = `
+    ${promoBanner()}
     <section class="mhead">
       <div class="mhead-t"><h1>👑 ${esc(st.title)}</h1>
         <span class="mhead-meta">${esc(t('round_n', { n: st.current_round }))} · ${esc(t('contestants_n', { n: m.board.length }))} · ${esc(t('groups_n', { n: groups.length }))} · ${esc(t('vote_every', { h: st.vote_hours }))} · <button class="mlink" data-act="rules">${t('rules')}</button>${st.voting_open ? '' : ` · <b>${t('voting_paused')}</b>`}</span>
@@ -611,6 +612,13 @@ async function adminSetPhoto(id, f){
   } catch(err){ toast(errMsg(err) || t('photo_fail'), true); return false; }
 }
 document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('[data-adph]'); if (el){ const f = el.files[0]; el.value = ''; adminSetPhoto(Number(el.dataset.adph), f); } });
+/* Promotion: admin sets ui.promo = { pct, until } – every package gets +pct % credits until then */
+function promoNow(){ const p = state.miss?.st.ui?.promo; return p && p.pct > 0 && Date.parse(p.until) > Date.now() ? p : null; }
+const promoBonus = n => { const p = promoNow(); return p ? Math.round(n * p.pct / 100) : 0; };
+function promoBanner(){
+  const p = promoNow(); if (!p) return '';
+  return `<button class="promo" data-act="credits"><b>🔥 ${esc(t('pr_banner', { p: p.pct }))}</b> <span class="promo-t">⏳ <b data-until="${Date.parse(p.until)}">${fmtHMS(Date.parse(p.until) - Date.now())}</b></span></button>`;
+}
 /* Credit packages – one price for the whole world (USD) */
 const CREDIT_PACKS = [
   { n: 10, usd: 2.99 }, { n: 50, usd: 9.99 }, { n: 100, usd: 17.99, top: true },
@@ -618,12 +626,12 @@ const CREDIT_PACKS = [
 const usd = v => new Intl.NumberFormat(LOCALE[LANG], { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 function openMissCredits(){
   const base = CREDIT_PACKS[0].usd / CREDIT_PACKS[0].n;
-  openModal(`<h2>💎 ${t('cr_title')}</h2><p class="sub">${t('cr_text')}</p>
+  openModal(`<h2>💎 ${t('cr_title')}</h2><p class="sub">${t('cr_text')}</p>${promoBanner()}
     ${state.user ? `<p class="small" style="margin:0 0 10px">${esc(t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) }))}</p>` : ''}
     <div class="crpacks">${CREDIT_PACKS.map(p => { const per = p.usd / p.n, off = Math.round((1 - per / base) * 100);
       return `<button class="crpack ${p.top ? 'top' : ''}" data-crbuy="${p.n}">
         ${p.top ? `<i class="crtag">${esc(t('cr_popular'))}</i>` : off > 0 ? `<i class="croff">−${off} %</i>` : ''}
-        <b class="crn">💎 ${p.n}</b><span class="crp">${usd(p.usd)}</span><span class="small">${esc(t('cr_per', { p: usd(per) }))}</span></button>`; }).join('')}</div>
+        <b class="crn">💎 ${p.n}</b>${promoBonus(p.n) ? `<span class="crbonus">🎁 ${esc(t('pr_bonus', { n: promoBonus(p.n) }))}</span>` : ''}<span class="crp">${usd(p.usd)}</span><span class="small">${esc(t('cr_per', { p: usd(per) }))}</span></button>`; }).join('')}</div>
     <p class="small" style="margin:10px 0 0">${esc(t('cr_pay_soon'))}</p>`);
 }
 function giftsToast(){ // contestant: once per visit, tell her about unread praise
@@ -648,8 +656,9 @@ document.addEventListener('change', e => { if (e.target.id === 'gfOn'){ store.se
 async function buyCredits(n){
   if (!state.user) return openLogin();
   if (api.mode !== 'demo') return toast(t('cr_pay_soon'));
-  await api.missGrant(state.user.email, n); // demo only: credits are added without payment
-  toast(t('cr_demo_added', { n: creditsTxt(n) }));
+  const total = n + promoBonus(n);
+  await api.missGrant(state.user.email, total); // demo only: credits are added without payment
+  toast(t('cr_demo_added', { n: creditsTxt(total) }));
   closeModal(); await loadMiss(); renderMiss();
 }
 /* "Enter the competition" is a 3-step flow: account → short profile → entry form */
@@ -788,6 +797,8 @@ async function renderMissAdmin(){
       <div class="field"><label class="l">${t('ad_reg_end')}</label><input type="datetime-local" id="mst_r" value="${toLocalInput(st.registration_until)}"></div>
       <div class="field"><label class="l">${t('ad_round_end')}</label><input type="datetime-local" id="mst_e" value="${st.round_ends_at ? toLocalInput(st.round_ends_at) : ''}"></div>
       <label class="check field"><input type="checkbox" id="mst_o" ${st.voting_open ? 'checked' : ''}> ${t('ad_voting')}</label>
+      <div class="field"><label class="l">🔥 ${t('ad_promo')}</label><input type="number" id="mst_pp" min="0" max="500" step="5" value="${st.ui?.promo?.pct ?? 0}"><span class="small">${t('ad_promo_hint')}</span></div>
+      <div class="field"><label class="l">🔥 ${t('ad_promo_end')}</label><input type="datetime-local" id="mst_pu" value="${toLocalInput(st.ui?.promo?.until || new Date(Date.now() + 864e5).toISOString())}"></div>
       <div class="field" style="grid-column:1/-1"><label class="l">${t('ad_show')}</label><div class="actions" style="justify-content:flex-start;gap:14px;flex-wrap:wrap">
         ${['instagram', 'star', 'need'].map(k => `<label class="check"><input type="checkbox" data-mui="${k}" ${missUi(k) ? 'checked' : ''}> ${t('ui_' + k)}</label>`).join('')}</div></div>
       <div class="actions"><button class="btn">${t('ad_save')}</button></div></form>
@@ -801,7 +812,8 @@ async function renderMissAdmin(){
     e.preventDefault();
     try { await api.missSaveSettings({ title: $('#mst_t').value.trim() || 'MISS of Pattaya', registration_until: new Date($('#mst_r').value).toISOString(), voting_open: $('#mst_o').checked,
         round_ends_at: $('#mst_e').value ? new Date($('#mst_e').value).toISOString() : null,
-        ui: { ...(st.ui || {}), ...Object.fromEntries([...document.querySelectorAll('[data-mui]')].map(i => [i.dataset.mui, i.checked])) } });
+        ui: { ...(st.ui || {}), ...Object.fromEntries([...document.querySelectorAll('[data-mui]')].map(i => [i.dataset.mui, i.checked])),
+          promo: { pct: Math.max(0, Math.round(Number($('#mst_pp').value) || 0)), until: $('#mst_pu').value ? new Date($('#mst_pu').value).toISOString() : null } } });
       toast(t('ad_saved')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); }
   });
 }
