@@ -330,6 +330,8 @@ async function loadMiss(){
 const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
 const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
 const ICON_G = '<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+const ICON_USER = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>';
+const ICON_OUT = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M16 17l5-5-5-5M21 12H9"/></svg>';
 function renderUser(){
   const dark = document.documentElement.dataset.theme === 'dark';
   const lang = `<select class="langsel" id="langSel" aria-label="${esc(t('language'))}">${LANGS.map(([c, n]) => `<option value="${c}" ${c === LANG ? 'selected' : ''}>${c.toUpperCase()} · ${n}</option>`).join('')}</select>`;
@@ -338,7 +340,7 @@ function renderUser(){
     ? `${realAdmin() ? `<button class="badge admtog ${state.asUser ? 'off' : ''}" data-act="asuser" title="${esc(state.asUser ? t('view_user') : t('view_admin'))}" aria-pressed="${!state.asUser}">${t('admin')}</button>` : ''}
        ${state.miss?.me?.id ? (u => `<button class="hbell" data-act="gifts" title="${esc(t('gf_title'))}" aria-label="${esc(t('gf_title'))}">🔔${u ? `<i>${u}</i>` : ''}</button>`)((state.miss.gifts || []).filter(g => !g.seen).length) : ''}
        <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
-       <button class="btn ghost" data-act="profile">${t('profile')}</button><button class="btn" data-act="logout">${t('logout')}</button>`
+       <button class="btn ghost" data-act="profile" title="${esc(t('profile'))}" aria-label="${esc(t('profile'))}"><span class="uic">${ICON_USER}</span><span class="ulb">${t('profile')}</span></button><button class="btn" data-act="logout" title="${esc(t('logout'))}" aria-label="${esc(t('logout'))}"><span class="uic">${ICON_OUT}</span><span class="ulb">${t('logout')}</span></button>`
     : `<button class="btn primary" data-act="login">${t('login')}</button>`);
   $('#langSel').addEventListener('change', e => { setLang(e.target.value); applyStaticText(); renderUser(); if (state.miss) renderMiss(); });
   $('#notices').innerHTML = api.mode === 'demo' ? `<div class="notice demo">⚠️ <span>${t('demo')}</span></div>` : '';
@@ -626,18 +628,18 @@ async function openMissProfile(id){
   const pos = missPos(c.id), boardC = state.miss?.board.find(x => x.id === c.id);
   openModal(`<div class="mprof">
     <div class="mprof-side"><div class="mprof-mhead"><h2>${esc(c.first_name)}</h2><p class="sub" style="margin:0">${sub}</p></div><div class="mprof-photo">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}">` : `<span>${esc(c.first_name[0] || '?')}</span>`}</div>
-      ${isAdmin() ? `<label class="btn" style="display:block;text-align:center;margin:8px 0;cursor:pointer">📷 ${esc(t('ad_photo'))}<input type="file" id="adPhoto" accept="image/*" hidden></label>` : ''}
-      ${hist.length ? `<div class="mhist">${hist.map(h => `<div class="mhist-r"><span>${esc(t('hist_round', { r: h.round }))}</span><span>${esc(place(h.place))}</span><span>${votesTxt(h.votes)}</span><b class="${h.advanced ? 'up' : 'down'}">${h.advanced ? t('hist_adv') : t('hist_out')}</b></div>`).join('')}</div>` : ''}
-      ${inRound ? `<div class="mstat">${esc(t('in_round', { v: votesTxt(c.votes), r: c.round, g: c.group_no }))}${pos ? '<br>' + missPosLine(pos) : ''}${state.miss?.st.round_ends_at ? `<br><span class="small">⏳ ${missEnded() ? t('round_ended') : `${t('ends_in')} <b data-mcount>${missCountTxt()}</b>`}</span>` : ''}</div>${boardC ? missMiniTable(boardC) : ''}` : c.eliminated_round ? `<div class="mstat">${esc(t('left_in', { r: c.eliminated_round }))}</div>` : ''}</div>
+      ${isAdmin() ? `<label class="btn mprof-adph" style="display:block;text-align:center;margin:8px 0;cursor:pointer">📷 ${esc(t('ad_photo'))}<input type="file" id="adPhoto" accept="image/*" hidden></label>` : ''}
+      <div class="mprof-stats">${hist.length ? `<div class="mhist">${hist.map(h => `<div class="mhist-r"><span>${esc(t('hist_round', { r: h.round }))}</span><span>${esc(place(h.place))}</span><span>${votesTxt(h.votes)}</span><b class="${h.advanced ? 'up' : 'down'}">${h.advanced ? t('hist_adv') : t('hist_out')}</b></div>`).join('')}</div>` : ''}
+      ${inRound ? `<div class="mstat">${esc(t('in_round', { v: votesTxt(c.votes), r: c.round, g: c.group_no }))}${pos ? '<br>' + missPosLine(pos) : ''}${state.miss?.st.round_ends_at ? `<br><span class="small">⏳ ${missEnded() ? t('round_ended') : `${t('ends_in')} <b data-mcount>${missCountTxt()}</b>`}</span>` : ''}</div>${boardC ? missMiniTable(boardC) : ''}` : c.eliminated_round ? `<div class="mstat">${esc(t('left_in', { r: c.eliminated_round }))}</div>` : ''}</div></div>
     <div class="mprof-body"><h2>${esc(c.first_name)}</h2>
       <p class="sub">${sub}</p>
-      ${row(t('fav_food'), c.favorite_food)}${row(t('fav_city'), c.favorite_city)}${row(t('free_time'), c.hobbies)}${EXTRA_Q.map(([k, l]) => row(t(l), (c.extra || {})[k])).join('')}
+      <div class="mprof-traits">${row(t('fav_food'), c.favorite_food)}${row(t('fav_city'), c.favorite_city)}${row(t('free_time'), c.hobbies)}${EXTRA_Q.map(([k, l]) => row(t(l), (c.extra || {})[k])).join('')}
       ${c.about ? `<p style="white-space:pre-line;margin:10px 0">${esc(c.about)}</p>` : ''}
-      <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div>
-      ${inRound ? `<div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
+      <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div></div>
+      ${inRound ? `<div class="mprof-vote"><div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
         <button class="btn primary mvbig" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote')}</button>
-        <div style="margin-top:10px">${creditTiles(c.id, t('cr_or'))}</div></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
-      <p class="small" style="margin-top:10px">${t('profile_link')} <a href="#c-${c.id}">${esc(missUrl(c.id))}</a></p>
+        <div style="margin-top:10px">${creditTiles(c.id, t('cr_or'))}</div></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}</div>` : ''}
+      <p class="small mprof-link" style="margin-top:10px">${t('profile_link')} <a href="#c-${c.id}">${esc(missUrl(c.id))}</a></p>
     </div></div>`, true);
   $('#adPhoto')?.addEventListener('change', async e => { if (await adminSetPhoto(c.id, e.target.files[0])) openMissProfile(c.id); });
 }
