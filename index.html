@@ -430,10 +430,11 @@
   .mmeta{font-size:12px;color:var(--muted);margin:2px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mvote{width:100%;padding:6px 4px}
   .mvrow{display:flex;gap:6px}.mvrow .mvote{flex:1;width:auto}
-  .mcredb{flex:none;padding:6px 10px;font-size:15px;line-height:1}
-  .mcredb.hot:not(:disabled){background:linear-gradient(135deg,#ff5f8f,#ff9a5a);border-color:transparent;color:#fff;box-shadow:0 0 0 3px rgba(255,95,143,.25);animation:mcpulse 2s ease-in-out infinite}
-  @keyframes mcpulse{50%{box-shadow:0 0 0 6px rgba(255,95,143,.08)}}
-  .mgc-r .mcredb{padding:3px 6px;font-size:12px}
+  .mcredb,.mcredb:hover:not(:disabled){flex:none;padding:0 2px;font-size:26px;line-height:1;background:none;border:0;box-shadow:none;cursor:pointer}
+  .mcredb:hover:not(:disabled){transform:scale(1.12)}
+  .mcredb.hot:not(:disabled){animation:mcpulse 1.6s ease-in-out infinite}
+  @keyframes mcpulse{50%{transform:scale(1.18);filter:drop-shadow(0 0 6px rgba(255,95,143,.9))}}
+  .mgc-r .mcredb{font-size:19px}
   .mrank{position:absolute;top:6px;left:6px;font-style:normal;font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff}
   .mrank.adv{background:var(--up,#1a7f37)}
   .mstar{position:absolute;bottom:6px;right:6px;font-size:18px;line-height:1;padding:3px 5px;border-radius:999px;background:rgba(0,0,0,.4);color:#fff;border:0;cursor:pointer}
