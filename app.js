@@ -82,7 +82,8 @@ const LINK_DEFS = [['instagram','Instagram','https://instagram.com/'],['tiktok',
   ['onlyfans','OnlyFans','https://onlyfans.com/'],['x','X / Twitter','https://x.com/'],['linktree','Linktree','https://linktr.ee/'],['web','Web','']];
 const PER_PAGE = 10;
 const signedPhotos = new Map(); // private copy: path → temporary signed URL
-const missPhoto = p => !p ? '' : DEMO ? p : CONFIG.PRIVATE ? (signedPhotos.get(p) || '') : `${CONFIG.SUPABASE_URL}/storage/v1/object/public/miss/${p}`;
+const photosHidden = () => ((state.miss?.st.ui) || {}).hide_photos === true; // admin switch: hide every photo from visitors
+const missPhoto = p => !p || (photosHidden() && !realAdmin()) ? '' : DEMO ? p : CONFIG.PRIVATE ? (signedPhotos.get(p) || '') : `${CONFIG.SUPABASE_URL}/storage/v1/object/public/miss/${p}`;
 async function signPhotos(paths){
   if (DEMO || !CONFIG.PRIVATE) return;
   const need = [...new Set(paths.filter(p => p && !signedPhotos.has(p)))];
@@ -276,7 +277,7 @@ function renderUser(){
   const theme = `<button class="theme-btn" data-act="theme" title="${esc(dark ? t('theme_light') : t('theme_dark'))}" aria-label="${esc(dark ? t('theme_light') : t('theme_dark'))}">${dark ? ICON_SUN : ICON_MOON}</button>`;
   $('#userArea').innerHTML = lang + theme + (state.user
     ? `${realAdmin() ? `<button class="btn viewtoggle" data-act="asuser">${state.asUser ? t('view_user') : t('view_admin')}</button>` : ''}${isAdmin() ? `<span class="badge">${t('admin')}</span>` : ''}
-       <span class="email" title="${esc(state.user.email)}">${esc(state.user.email || '')}</span>
+       <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
        <button class="btn ghost" data-act="profile">${t('profile')}</button><button class="btn" data-act="logout">${t('logout')}</button>`
     : `<button class="btn primary" data-act="login">${t('login')}</button>`);
   $('#langSel').addEventListener('change', e => { setLang(e.target.value); applyStaticText(); renderUser(); if (state.miss) renderMiss(); });
@@ -432,6 +433,7 @@ function missStatsView(){
 }
 const missLayout = () => store.get('mp_layout', 'photo') === 'list' ? 'list' : 'photo';
 function renderMiss(){
+  renderUser(); // header shows the credit balance
   const m = state.miss, st = m.st, el = $('#app');
   const groups = [...new Set(m.board.map(c => c.group_no))].sort((a, b) => a - b);
   const pages = Math.max(1, Math.ceil(groups.length / PER_PAGE));
@@ -450,9 +452,10 @@ function renderMiss(){
       <div class="mhead-t"><h1>👑 ${esc(st.title)}</h1>
         <span class="mhead-meta">${esc(t('round_n', { n: st.current_round }))} · ${esc(t('contestants_n', { n: m.board.length }))} · ${esc(t('groups_n', { n: groups.length }))} · ${esc(t('vote_every', { h: st.vote_hours }))} · <button class="mlink" data-act="rules">${t('rules')}</button>${st.voting_open ? '' : ` · <b>${t('voting_paused')}</b>`}</span>
         <p class="mtag">${t('tagline')}</p></div>
+      <div class="mhead-a">${cta}${realAdmin() ? `<button class="btn ${photosHidden() ? 'primary' : ''}" data-act="togglephotos" title="${esc(t('ph_admin_hint'))}">${photosHidden() ? '👁 ' + t('ph_show') : '🙈 ' + t('ph_hide')}</button>` : ''}</div>
       ${st.round_ends_at ? `<div class="mhead-c ${missEnded() ? 'over' : (missEndsLeft() < 864e5 ? 'urgent' : '')}">${missEnded() ? `⏳ ${esc(t('round_over', { n: st.current_round }))}` : `<span class="mhead-l">⏳ ${t('ends_in')}</span><div class="mclk" data-mclock>${clockInner(missEndsLeft())}</div>`}</div>` : ''}
-      <div class="mhead-a">${state.user ? `<span class="small">${t('credits')}: <b>${m.credits}</b></span> <button class="btn" data-act="credits">${t('buy')}</button>` : ''} ${cta}</div>
     </section>
+    ${realAdmin() && photosHidden() ? `<div class="notice demo">🙈 ${t('ph_hidden_note')}</div>` : ''}
     ${isAdmin() ? '<div id="missAdmin"></div>' : ''}
     ${missMeBox()}
     <div class="mtabs">${[['all', `<span class="lg">${t('tab_all')}</span><span class="sm">${t('tab_all_short')}</span>`], ['fav', `⭐ <span class="lg">${t('tab_fav')} </span>(${missFavs().filter(id => m.board.some(c => c.id === id)).length})`], ['stats', `📊<span class="lg"> ${t('tab_stats')}</span>`]].map(([k, l]) => `<button class="chip ${view === k ? 'on' : ''}" data-mview="${k}">${l}</button>`).join('')}
@@ -703,7 +706,7 @@ async function renderMissAdmin(){
     e.preventDefault();
     try { await api.missSaveSettings({ title: $('#mst_t').value.trim() || 'MISS of Pattaya', registration_until: new Date($('#mst_r').value).toISOString(), voting_open: $('#mst_o').checked,
         round_ends_at: $('#mst_e').value ? new Date($('#mst_e').value).toISOString() : null,
-        ui: Object.fromEntries([...document.querySelectorAll('[data-mui]')].map(i => [i.dataset.mui, i.checked])) });
+        ui: { ...(st.ui || {}), ...Object.fromEntries([...document.querySelectorAll('[data-mui]')].map(i => [i.dataset.mui, i.checked])) } });
       toast(t('ad_saved')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); }
   });
 }
@@ -794,7 +797,7 @@ function openProfile(){
   const join = joinIntent.get() && !state.profile;
   const p = state.profile || (join ? { gender: 'female' } : {}), y = new Date().getFullYear(), years = [];
   for (let i = y - 13; i >= 1920; i--) years.push(i);
-  openModal(`<h2>${join ? t('jn_t2') : state.profile ? t('pf_title') : t('pf_new')}</h2><p class="sub">${join ? t('jn_s2') : t('pf_sub')}</p>
+  openModal(`<h2>${join ? t('jn_t2') : state.profile ? t('pf_title') : t('pf_new')}</h2><p class="sub">${join ? t('jn_s2') : t('pf_sub')}</p>${state.user?.email ? `<p class="small" style="margin:-6px 0 12px">✉️ ${esc(state.user.email)}</p>` : ''}
     <form id="profileForm">
       <div class="field"><label class="l">${t('gender')}</label>
         <div class="seg">${['female', 'male', 'other'].map((g, i) => `<label><input type="radio" name="gender" value="${g}" ${p.gender === g ? 'checked' : ''} ${i ? '' : 'required'}>${t(g)}</label>`).join('')}</div></div>
@@ -856,6 +859,9 @@ document.addEventListener('click', async e => {
     case 'theme': { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; try { localStorage.setItem('mp_theme', next); } catch {} renderUser(); return; }
     case 'signup': return openMissSignup();
     case 'credits': return openMissCredits();
+    case 'togglephotos': { const st = state.miss.st, hide = !photosHidden();
+      try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
+      return; }
     case 'rules': return openRules();
     case 'grant': try { const b = await api.missGrant($('#mg_e').value.trim(), Number($('#mg_a').value)); toast(t('ad_granted', { n: creditsTxt(b) })); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return;
     case 'newround': return openMissNewRound();
