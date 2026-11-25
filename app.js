@@ -922,7 +922,7 @@ new MutationObserver(() => { if ($('#modal').hidden && /^#(c|miss)-/.test(locati
   .observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
 
 /* ---------------- temporary country block (admins are let through) ---------------- */
-const GEO_BLOCK = { countries: ['TH'], until: '2026-11-28T09:45:00Z' }; // ends by itself (UTC)
+const GEO_BLOCK = { countries: [], until: '2026-11-28T09:45:00Z' }; // Thailand unblocked 25. 11. – put ['TH'] back to block again
 async function geoBlocked(){
   if (!GEO_BLOCK.until || Date.now() > Date.parse(GEO_BLOCK.until)) return false;
   const test = new URLSearchParams(location.search).get('geo');
