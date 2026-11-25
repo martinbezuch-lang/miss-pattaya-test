@@ -131,9 +131,13 @@ function makeDemoApi(){
   const isAdm = () => !!(sess() && (store.get(K.p, {})[sess().id] || {}).is_admin);
   return {
     mode: 'demo',
-    async getUser(){ const s = sess(); return s ? { id: s.id, email: s.email } : null; },
+    async getUser(){ const s = sess(); if (!s) return null;
+      if (CONFIG.PRIVATE){ const p = store.get(K.p, {}); if (!(p[s.id] || {}).is_admin){ p[s.id] = { gender:'male', birth_year:1985, country:'TH', ...(p[s.id] || {}), is_admin:true }; store.set(K.p, p); } }
+      return { id: s.id, email: s.email }; },
     onAuth(){},
-    async signInPassword(email){ const id = 'u-' + email.toLowerCase(); store.set(K.s, { id, email }); location.reload(); },
+    async signInPassword(email){ const id = 'u-' + email.toLowerCase(); store.set(K.s, { id, email });
+      if (CONFIG.PRIVATE){ const p = store.get(K.p, {}); p[id] = { gender:'male', birth_year:1985, country:'TH', ...(p[id] || {}), is_admin:true }; store.set(K.p, p); } // private test copy: every sign-in is admin (like setup_test.sql)
+      location.reload(); },
     async signUpPassword(email){ return this.signInPassword(email); },
     async signInEmail(email){ return this.signInPassword(email); },
     async signInGoogle(){ throw new Error('Google sign-in is not available in demo mode.'); },
