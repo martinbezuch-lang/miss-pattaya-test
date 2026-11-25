@@ -82,7 +82,7 @@ const LINK_DEFS = [['instagram','Instagram','https://instagram.com/'],['tiktok',
   ['onlyfans','OnlyFans','https://onlyfans.com/'],['x','X / Twitter','https://x.com/'],['linktree','Linktree','https://linktr.ee/'],['web','Web','']];
 const PER_PAGE = 10;
 // round social buttons on the cards; swap in the official icon files (e.g. '<img src="icons/instagram.svg" alt="">') when available
-const SOC_ICON = { instagram: 'IG', onlyfans: 'OF' };
+const SOC_ICON = { instagram: 'IG', onlyfans: '<svg aria-hidden="true" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect fill="#00aeef" width="400" height="400" rx="200"/><path fill="#fff" opacity="0.8" d="M156.25,125a87.5,87.5,0,1,0,87.5,87.5A87.53,87.53,0,0,0,156.25,125Zm0,113.75A26.25,26.25,0,1,1,182.5,212.5,26.21,26.21,0,0,1,156.25,238.75Z"/><path fill="#fff" d="M254.6,190.62c22.23,6.4,48.48,0,48.48,0-7.62,33.25-31.77,54.07-66.59,56.61A87.33,87.33,0,0,1,156.25,300l26.25-83.43c27-85.76,40.81-91.57,104.81-91.57h43.94C323.9,157.37,298.57,182.11,254.6,190.62Z"/></svg>' }; // onlyfans: official OnlyFans_Social_Icon_Circle_Blue.svg
 const signedPhotos = new Map(); // private copy: path → temporary signed URL
 const photosHidden = () => ((state.miss?.st.ui) || {}).hide_photos === true; // admin switch: hide every photo from visitors
 const missPhoto = p => !p || (photosHidden() && !realAdmin()) ? '' : DEMO ? p : CONFIG.PRIVATE ? (signedPhotos.get(p) || '') : `${CONFIG.SUPABASE_URL}/storage/v1/object/public/miss/${p}`;
