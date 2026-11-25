@@ -232,7 +232,10 @@ function makeDemoApi(){
     async notes(){ return store.get('mp_notes', []); },
     async noteAdd(n){ const l = store.get('mp_notes', []); l.unshift({ id: Date.now(), title: n.title, body: n.body || null, url: null, created_at: new Date().toISOString() }); store.set('mp_notes', l.slice(0, 40)); },
     async notesSeenAt(){ return store.get('mp_notes_seen', null); },
-    async notesSeen(){ store.set('mp_notes_seen', new Date().toISOString()); }
+    async notesSeen(){ store.set('mp_notes_seen', new Date().toISOString()); },
+    /* visit counter (demo: kept in this browser) */
+    async track(r){ const l = store.get('mp_visits', []); l.push({ ...r, at: new Date().toISOString(), who: r.vid }); store.set('mp_visits', l.slice(-3000)); },
+    async visitStats(days){ return visitAgg(store.get('mp_visits', []), days); }
   };
 }
 
@@ -310,7 +313,10 @@ async function makeSupabaseApi(){
       this.notesOn = !r.error; return r.error ? [] : r.data; },
     async noteAdd(n){ chk(await sb.from('miss_notes').insert({ title: n.title, body: n.body || null })); },
     async notesSeenAt(){ return state.profile?.notes_seen_at || null; },
-    async notesSeen(){ chk(await sb.rpc('miss_notes_seen')); }
+    async notesSeen(){ chk(await sb.rpc('miss_notes_seen')); },
+    /* visit counter (needs navstevy.sql) */
+    async track(r){ await sb.rpc('miss_track', { p_page: r.page, p_ref: r.ref ?? null, p_vid: r.vid, p_country: r.country || null, p_lang: r.lang, p_src: r.src || null, p_mobile: r.mobile }); },
+    async visitStats(days){ return chk(await sb.rpc('miss_visit_stats', { p_days: days })); }
   };
 }
 
@@ -356,7 +362,7 @@ function renderUser(){
        <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
        <button class="btn ghost" data-act="profile" title="${esc(t('profile'))}" aria-label="${esc(t('profile'))}"><span class="uic">${ICON_USER}</span><span class="ulb">${t('profile')}</span></button><button class="btn" data-act="logout" title="${esc(t('logout'))}" aria-label="${esc(t('logout'))}"><span class="uic">${ICON_OUT}</span><span class="ulb">${t('logout')}</span></button>`
     : `<button class="btn primary" data-act="login">${t('login')}</button>`);
-  $('#langSel').addEventListener('change', e => { setLang(e.target.value); applyStaticText(); renderUser(); if (state.miss) renderMiss(); });
+  $('#langSel').addEventListener('change', e => { setLang(e.target.value); track('lang'); applyStaticText(); renderUser(); if (state.miss) renderMiss(); });
   $('#notices').innerHTML = api.mode === 'demo' ? `<div class="notice demo">⚠️ <span>${t('demo')}</span></div>` : '';
 }
 
@@ -634,6 +640,7 @@ async function openMissProfile(id){
   try { [c, hist] = await Promise.all([api.missProfile(id), api.missHistory(id).catch(() => [])]); } catch(err){ openModal(`<p>${esc(errMsg(err))}</p>`); return; }
   if (c) await signPhotos([c.photo_path]);
   if (!c){ openModal(`<h2>${t('nf_title')}</h2><p class="sub">${t('nf_text')}</p>`); return; }
+  track('profil', id);
   const ph = missPhotoOf(c), links = c.links || {};
   const inRound = !c.eliminated_round && c.round === state.miss?.st.current_round && c.status === 'approved';
   const row = (l, v) => v ? `<div class="mrowi"><span>${l}</span><b>${esc(v)}</b></div>` : '';
@@ -1037,7 +1044,7 @@ async function renderMissAdmin(){
   if (api.idOn) [leads, idq] = await Promise.all([api.leads().catch(() => []), api.missIdQueue().catch(() => [])]);
   state.pend = pend; state.idQueue = idq; state.leadsAll = state.leadsAll || false;
   const shownLeads = state.leadsAll ? leads : leads.slice(0, 15);
-  el.innerHTML = `<div class="panel"><h3>${esc(t('ad_title', { t: st.title }))}</h3>
+  el.innerHTML = `<div class="panel"><div class="vs-head"><h3>${esc(t('ad_title', { t: st.title }))}</h3><button class="btn" data-act="visits">📊 ${esc(t('vs_title'))}</button></div>
     <h4 class="sec" style="margin-top:12px">${esc(t('ad_pending', { n: pend.length }))}</h4>
     ${pend.length ? `<div class="mpend">${pend.map(c => `<div class="mpc"><button class="mphoto sm" data-mopen="${c.id}">${c.photo_path ? `<img src="${esc(missPhoto(c.photo_path))}" alt="">` : `<span>${esc(c.first_name[0])}</span>`}</button>
       <div><b>${esc(c.first_name)}</b> ${flagOf(c.country)} · ${esc(t('born', { d: c.birth_date }))} ${api.idOn ? idBadge(c) : ''}${c.id_doc_path ? ` <button class="mlink" data-idview="${c.id}">${t('ad_id_view')}</button>` : ''}${c.about ? `<br><span class="small">${esc(c.about).slice(0, 80)}</span>` : ''}${contactLinks(c) ? `<br><span class="small">${contactLinks(c)}</span>` : ''}
@@ -1190,8 +1197,89 @@ function openProfile(){
   });
 }
 
+/* ---------------- visit counter (admin → 📊 Návštevnosť) ---------------- */
+const VISIT_ID = (() => { let v = store.get('mp_vid', null); if (!v){ v = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('mp_vid', v); } return v; })();
+let lastTrack = '';
+function noTrack(){ if (realAdmin()) store.set('mp_notrack', true); return CONFIG.PRIVATE || store.get('mp_notrack', false) || !api?.track; }
+async function track(page, ref){
+  if (noTrack()) return;
+  const key = page + ':' + (ref ?? '') + ':' + Math.floor(Date.now() / 5000);
+  if (lastTrack === key) return; lastTrack = key;
+  let src = null;
+  if (page === 'home'){
+    const q = new URLSearchParams(location.search);
+    src = q.get('utm_source') || q.get('src') || (q.has('reg') ? 'reg' : null);
+    if (!src && document.referrer){ try { const h = new URL(document.referrer).hostname.replace(/^www\./, ''); if (h && h !== location.hostname) src = h; } catch {} }
+  }
+  const country = await Promise.race([visitorCountry(), new Promise(r => setTimeout(() => r(''), 4500))]);
+  try { await api.track({ page, ref: ref ?? null, vid: VISIT_ID, country, lang: LANG, src, mobile: matchMedia('(max-width:760px)').matches || /Mobi|Android|iPhone/i.test(navigator.userAgent) }); } catch {}
+}
+const TRACK_ACTS = new Set(['rules', 'signup', 'joinnow', 'login', 'loginup', 'credits', 'gifts', 'pushon', 'idverify', 'draftlater']);
+function trackClick(d){
+  if (d.act) return TRACK_ACTS.has(d.act) && track('act:' + d.act);
+  if (d.mvote) return track('vote', Number(d.mvote));
+  if (d.mcredopen) return track('credit_open', Number(d.mcredopen));
+  if (d.crbuy) return track('buy');
+  if (d.mshare || d.mcopy) return track('share', Number(d.mshare || d.mcopy));
+  if (d.mview) return track('view:' + d.mview);
+  if (d.mflag) return track('flag');
+  if (d.mfav) return track('fav', Number(d.mfav));
+  if (d.mpage) return track('page_n');
+}
+function visitAgg(rows, days){ // same result as miss_visit_stats() in SQL (used by the demo)
+  const bkk = iso => new Date(new Date(iso).getTime() + 7 * 36e5).toISOString().slice(0, 10);
+  const dAgo = n => bkk(new Date(Date.now() - n * 864e5).toISOString()), today = dAgo(0);
+  const tot = l => ({ v: l.filter(r => r.page === 'home').length, u: new Set(l.map(r => r.who)).size });
+  const R = rows.map(r => ({ ...r, d: bkk(r.at) })), W = R.filter(r => r.d > dAgo(30));
+  const grp = (l, k) => { const m = new Map(); l.forEach(r => { const g = k(r); const x = m.get(g) || { n: 0, w: new Set() }; x.n++; x.w.add(r.who); m.set(g, x); }); return [...m].map(([g, x]) => ({ g, n: x.n, u: x.w.size })); };
+  const desc = (a, b) => b.n - a.n || b.u - a.u, descU = (a, b) => b.u - a.u;
+  const nd = Math.max(1, Math.min(days, 90));
+  return {
+    since: R[0]?.at || null,
+    tot: { d1: tot(R.filter(r => r.d === today)), d7: tot(R.filter(r => r.d > dAgo(7))), d30: tot(W), all: tot(R) },
+    days: Array.from({ length: nd }, (_, i) => { const d = dAgo(nd - 1 - i); return { d, ...tot(R.filter(r => r.d === d)) }; }),
+    pages: grp(W.filter(r => r.page !== 'home'), r => r.page).sort(desc).slice(0, 25).map(x => ({ p: x.g, n: x.n, u: x.u })),
+    profiles: grp(W.filter(r => r.page === 'profil' && r.ref), r => r.ref).sort(desc).slice(0, 15).map(x => ({ id: x.g, name: state.miss?.board.find(c => c.id === x.g)?.first_name || '#' + x.g, n: x.n, u: x.u })),
+    countries: grp(W, r => r.country || '').sort(descU).slice(0, 15).map(x => ({ c: x.g, u: x.u })),
+    langs: grp(W, r => r.lang || '').sort(descU).map(x => ({ l: x.g, u: x.u })),
+    srcs: grp(W.filter(r => r.page === 'home' && r.src), r => r.src).sort(descU).slice(0, 10).map(x => ({ s: x.g, u: x.u })),
+    mobile: W.length ? Math.round(100 * new Set(W.filter(r => r.mobile).map(r => r.who)).size / new Set(W.map(r => r.who)).size) : null
+  };
+}
+const vsPage = p => { const k = 'vs_p_' + p.replace(/[:-]/g, '_'), s = t(k); return s === k ? p : s; };
+async function openVisitStats(days){
+  if (!realAdmin()) return;
+  days = days || state.vsDays || 14; state.vsDays = days;
+  if (location.hash !== '#navstevy') history.replaceState(null, '', location.pathname + location.search + '#navstevy');
+  if ($('#modal').hidden || !$('.vstats')) openModal(`<div class="vstats"><div class="empty">${t('loading')}</div></div>`, true);
+  let s;
+  try { s = await api.visitStats(days); } catch(err){ $('.vstats').innerHTML = `<h2>📊 ${esc(t('vs_title'))}</h2><p class="sub">${esc(t('vs_sql'))}</p><p class="small">${esc(errMsg(err))}</p>`; return; }
+  const n = x => Number(x || 0).toLocaleString(LOCALE[LANG]);
+  const tile = (k, x) => `<div class="vs-tile"><span class="small">${esc(t(k))}</span><b>${n(x?.u)}</b><span class="small">${esc(t('vs_u', { n: x?.u || 0 }))}</span><span class="small">${esc(t('vs_v', { n: n(x?.v) }))}</span></div>`;
+  const max = Math.max(1, ...s.days.map(d => d.u));
+  const bars = s.days.map(d => { const dt = new Date(d.d + 'T12:00:00Z'), lbl = dt.toLocaleDateString(LOCALE[LANG], { day: 'numeric', month: 'numeric', timeZone: 'UTC' });
+    return `<div class="vs-col" title="${esc(lbl)}: ${n(d.u)} ${esc(t('vs_u', { n: d.u }))} · ${esc(t('vs_v', { n: n(d.v) }))}"><span class="vs-num">${d.u || ''}</span><i style="height:${d.u ? Math.max(3, Math.round(100 * d.u / max)) : 0}%"></i><span class="vs-day">${days <= 14 || dt.getUTCDate() % 5 === 0 ? dt.getUTCDate() + '.' : '&nbsp;'}</span></div>`; }).join('');
+  const table = (title, rows, cols) => rows.length ? `<div class="vs-box"><h4 class="sec">${esc(title)}</h4><table class="vs-t"><tbody>${rows.map(r => `<tr>${cols.map((c, i) => `<td${i ? ' class="num"' : ''}>${c(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+  const ppl = r => `${n(r.u)} <span class="small">${esc(t('vs_ppl', { n: r.u }))}</span>`;
+  const cnt = r => `${n(r.n)}× <span class="small">· ${n(r.u)} ${esc(t('vs_ppl', { n: r.u }))}</span>`;
+  const langName = l => LANGS.find(x => x[0] === l)?.[1] || l || '?';
+  $('.vstats').innerHTML = `<h2>📊 ${esc(t('vs_title'))}</h2>
+    <div class="vs-tiles">${tile('vs_today', s.tot.d1)}${tile('vs_7', s.tot.d7)}${tile('vs_30', s.tot.d30)}${tile('vs_all', s.tot.all)}</div>
+    <div class="vs-box"><div class="vs-head"><h4 class="sec">${esc(t('vs_daily'))}</h4><span>${[7, 14, 30].map(k => `<button class="chip ${days === k ? 'on' : ''}" data-vsdays="${k}">${esc(t('vs_ndays', { n: k }))}</button>`).join('')}</span></div>
+      <div class="vs-bars">${bars}</div></div>
+    ${!s.tot.all.u ? `<p class="small">${esc(t('vs_none'))}</p>` : `<div class="vs-grid">
+    ${table(t('vs_pages'), s.pages, [r => esc(vsPage(r.p)), cnt])}
+    ${table(t('vs_profiles'), s.profiles, [r => `<button class="mlink" data-mopen="${r.id}">${esc(r.name || '#' + r.id)}</button>`, cnt])}
+    ${table(t('vs_countries'), s.countries, [r => `${flagOf(r.c)} ${esc(r.c ? countryName(r.c) : '?')}`, ppl])}
+    ${table(t('vs_srcs'), s.srcs, [r => esc(r.s === 'reg' ? t('vs_src_reg') : r.s), ppl])}
+    ${table(t('vs_langs'), s.langs, [r => esc(langName(r.l)), ppl])}
+    </div>`}
+    <p class="small" style="margin-top:12px">${s.mobile != null ? esc(t('vs_mobile', { p: s.mobile })) + ' · ' : ''}${esc(t('vs_since', { d: s.since ? fmtDate(s.since) : '–' }))}</p>`;
+}
+
 /* ---------------- routing ---------------- */
 function route(){
+  if (location.hash === '#navstevy') return openVisitStats();
   const m = location.hash.match(/^#(?:c|miss)-(\d+)$/);
   if (m) openMissProfile(Number(m[1]));
 }
@@ -1204,6 +1292,8 @@ document.addEventListener('click', async e => {
   if (!tg) return;
   if (tg.hasAttribute('data-close')) return closeModal();
   const d = tg.dataset;
+  trackClick(d);
+  if (d.vsdays) return openVisitStats(Number(d.vsdays));
   if (d.mopen){ if (location.hash === '#c-' + d.mopen) openMissProfile(Number(d.mopen)); else location.hash = 'c-' + d.mopen; return; }
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
   if (d.mcredopen) return openMissCreditVote(Number(d.mcredopen));
@@ -1279,6 +1369,7 @@ document.addEventListener('click', async e => {
       try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
       return; }
     case 'rules': return openRules();
+    case 'visits': return openVisitStats();
     case 'grant': try { const b = await api.missGrant($('#mg_e').value.trim(), Number($('#mg_a').value)); toast(t('ad_granted', { n: creditsTxt(b) })); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return;
     case 'newround': return openMissNewRound();
     case 'prerand': document.querySelectorAll('[data-mpot]').forEach(el => { el.value = '1'; }); return missNrPreview();
@@ -1297,7 +1388,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden){ closeModal(); if (/^#(c|miss)-/.test(location.hash)) history.replaceState(null, '', location.pathname); } });
 // closing a profile clears its #c-ID so the same link can be opened again
-new MutationObserver(() => { if ($('#modal').hidden && /^#(c|miss)-/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); })
+new MutationObserver(() => { if ($('#modal').hidden && /^#((c|miss)-|navstevy$)/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); })
   .observe($('#modal'), { attributes: true, attributeFilter: ['hidden'] });
 
 /* ---------------- temporary country block (admins are let through) ---------------- */
@@ -1345,7 +1436,7 @@ try {
   state.geo = CONFIG.PRIVATE ? false : await geoBlocked();
   if (state.geo && !realAdmin()) showGeoBlock();
   else if (privateGate()) {}
-  else { await loadMiss(); renderMiss(); route(); if (!continueJoin() && state.user && !state.profile) openProfile(); giftsToast();
+  else { await loadMiss(); renderMiss(); track('home'); route(); if (!continueJoin() && state.user && !state.profile) openProfile(); giftsToast();
     const q = new URLSearchParams(location.search); if (q.has('reg')){ q.delete('reg'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); if (!state.miss.me) openMissSignup(); } }
   api.onAuth(async () => { if (!$('#modal').hidden && $('#pwForm')) closeModal(); await loadAuth(); renderUser(); if (state.geo && !realAdmin()) return showGeoBlock(); if (privateGate()) return; await loadMiss(); renderMiss(); if (!continueJoin() && state.user && !state.profile) openProfile(); });
 } catch(err){
