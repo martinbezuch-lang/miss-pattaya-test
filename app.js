@@ -81,6 +81,8 @@ setLang(LANG);
 const LINK_DEFS = [['instagram','Instagram','https://instagram.com/'],['tiktok','TikTok','https://www.tiktok.com/@'],['youtube','YouTube','https://youtube.com/@'],
   ['onlyfans','OnlyFans','https://onlyfans.com/'],['x','X / Twitter','https://x.com/'],['linktree','Linktree','https://linktr.ee/'],['web','Web','']];
 const PER_PAGE = 10;
+const GIFT_MSGS = ['m1','m2','m3','m4','m5','m6'];
+const NICK_OK = n => { const s = String(n || '').trim(); return s.length >= 1 && s.length <= 24 && !/(@|https?:|www\.|\.[a-z]{2,3}(\s|$)|\d.*\d.*\d.*\d)/i.test(s); };
 // round social buttons on the cards; swap in the official icon files (e.g. '<img src="icons/instagram.svg" alt="">') when available
 const SOC_ICON = { instagram: '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><path fill="#fff" d="M295.42,6c-53.2,2.51-89.53,11-121.29,23.48-32.87,12.81-60.73,30-88.45,57.82S40.89,143,28.17,175.92c-12.31,31.83-20.65,68.19-23,121.42S2.3,367.68,2.56,503.46,3.42,656.26,6,709.6c2.54,53.19,11,89.51,23.48,121.28,12.83,32.87,30,60.72,57.83,88.45S143,964.09,176,976.83c31.8,12.29,68.17,20.67,121.39,23s70.35,2.87,206.09,2.61,152.83-.86,206.16-3.39S799.1,988,830.88,975.58c32.87-12.86,60.74-30,88.45-57.84S964.1,862,976.81,829.06c12.32-31.8,20.69-68.17,23-121.35,2.33-53.37,2.88-70.41,2.62-206.17s-.87-152.78-3.4-206.1-11-89.53-23.47-121.32c-12.85-32.87-30-60.7-57.82-88.45S862,40.87,829.07,28.19c-31.82-12.31-68.17-20.7-121.39-23S637.33,2.3,501.54,2.56,348.75,3.4,295.42,6m5.84,903.88c-48.75-2.12-75.22-10.22-92.86-17-23.36-9-40-19.88-57.58-37.29s-28.38-34.11-37.5-57.42c-6.85-17.64-15.1-44.08-17.38-92.83-2.48-52.69-3-68.51-3.29-202s.22-149.29,2.53-202c2.08-48.71,10.23-75.21,17-92.84,9-23.39,19.84-40,37.29-57.57s34.1-28.39,57.43-37.51c17.62-6.88,44.06-15.06,92.79-17.38,52.73-2.5,68.53-3,202-3.29s149.31.21,202.06,2.53c48.71,2.12,75.22,10.19,92.83,17,23.37,9,40,19.81,57.57,37.29s28.4,34.07,37.52,57.45c6.89,17.57,15.07,44,17.37,92.76,2.51,52.73,3.08,68.54,3.32,202s-.23,149.31-2.54,202c-2.13,48.75-10.21,75.23-17,92.89-9,23.35-19.85,40-37.31,57.56s-34.09,28.38-57.43,37.5c-17.6,6.87-44.07,15.07-92.76,17.39-52.73,2.48-68.53,3-202.05,3.29s-149.27-.25-202-2.53m407.6-674.61a60,60,0,1,0,59.88-60.1,60,60,0,0,0-59.88,60.1M245.77,503c.28,141.8,115.44,256.49,257.21,256.22S759.52,643.8,759.25,502,643.79,245.48,502,245.76,245.5,361.22,245.77,503m90.06-.18a166.67,166.67,0,1,1,167,166.34,166.65,166.65,0,0,1-167-166.34" transform="translate(-2.5 -2.5)"/></svg>', onlyfans: '<svg aria-hidden="true" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect fill="#00aeef" width="400" height="400" rx="200"/><path fill="#fff" opacity="0.8" d="M156.25,125a87.5,87.5,0,1,0,87.5,87.5A87.53,87.53,0,0,0,156.25,125Zm0,113.75A26.25,26.25,0,1,1,182.5,212.5,26.21,26.21,0,0,1,156.25,238.75Z"/><path fill="#fff" d="M254.6,190.62c22.23,6.4,48.48,0,48.48,0-7.62,33.25-31.77,54.07-66.59,56.61A87.33,87.33,0,0,1,156.25,300l26.25-83.43c27-85.76,40.81-91.57,104.81-91.57h43.94C323.9,157.37,298.57,182.11,254.6,190.62Z"/></svg>' }; // official assets: Instagram_Glyph_White.svg, OnlyFans_Social_Icon_Circle_Blue.svg
 const signedPhotos = new Map(); // private copy: path → temporary signed URL
@@ -115,7 +117,7 @@ function confirmClick(btn, label){
    BACKEND – DEMO (localStorage)
    ===================================================================== */
 function makeDemoApi(){
-  const K = { set:'mp_set', c:'mp_c', v:'mp_v', w:'mp_w', s:'mp_session', p:'mp_profiles', res:'mp_res' };
+  const K = { set:'mp_set', c:'mp_c', v:'mp_v', w:'mp_w', s:'mp_session', p:'mp_profiles', res:'mp_res', g:'mp_gifts' };
   const sess = () => store.get(K.s, null);
   if (!store.get(K.set)){
     store.set(K.set, { id:1, title:'MISS of Pattaya', registration_until:new Date(Date.now() + 200 * 864e5).toISOString(), current_round:1, voting_open:true, group_size:5, vote_hours:8, eliminate_count:2,
@@ -162,6 +164,13 @@ function makeDemoApi(){
       else { const w = store.get(K.w, {}); if ((w[uid] || 0) < n) throw new Error('E:NO_CREDITS'); w[uid] -= n; store.set(K.w, w); }
       vs.push({ contestant_id:id, user_id:uid, round:c.round, group_no:c.group_no, votes:n || 1, paid:!!n, created_at:new Date().toISOString() }); store.set(K.v, vs);
     },
+    async missVoteGift(uid, id, credits, nick, msg){
+      if (!NICK_OK(nick)) throw new Error('E:NICK');
+      await this.missVote(uid, id, credits);
+      const g = store.get(K.g, []); g.unshift({ id: Date.now(), contestant_id: id, nick: nick.trim(), country: (store.get(K.p, {})[uid] || {}).country || null, credits, msg: msg || null, seen: false, created_at: new Date().toISOString() }); store.set(K.g, g);
+    },
+    async myGifts(cid){ return store.get(K.g, []).filter(g => g.contestant_id === Number(cid)); },
+    async giftsSeen(cid){ store.set(K.g, store.get(K.g, []).map(g => g.contestant_id === Number(cid) ? { ...g, seen: true } : g)); },
     async myContestant(uid){ return store.get(K.c, []).find(c => c.user_id === uid) || null; },
     async saveContestant(uid, row){
       const l = store.get(K.c, []), i = l.findIndex(c => c.user_id === uid);
@@ -229,6 +238,9 @@ async function makeSupabaseApi(){
     async missProfile(id){ return chk(await sb.from('miss_profiles').select('*').eq('id', id).maybeSingle()); },
     async myMissVotes(uid, round){ return chk(await sb.from('miss_votes').select('contestant_id,group_no,votes,paid,created_at').eq('round', round)); },
     async missVote(uid, id, credits){ return chk(await sb.rpc('miss_vote', { p_contestant:id, p_credits:credits || 0 })); },
+    async missVoteGift(uid, id, credits, nick, msg){ return chk(await sb.rpc('miss_vote_gift', { p_contestant:id, p_credits:credits, p_nick:nick, p_msg:msg || null })); },
+    async myGifts(cid){ return chk(await sb.from('miss_gifts').select('id,contestant_id,nick,country,credits,msg,seen,created_at').eq('contestant_id', cid).order('created_at', { ascending:false }).limit(100)); },
+    async giftsSeen(){ chk(await sb.rpc('miss_gifts_seen')); },
     async myContestant(uid){ return chk(await sb.from('miss_contestants').select('*').eq('user_id', uid).maybeSingle()); },
     async saveContestant(uid, row){
       const cur = chk(await sb.from('miss_contestants').select('id').eq('user_id', uid).maybeSingle());
@@ -266,7 +278,8 @@ async function loadMiss(){
   const [st, board] = await Promise.all([api.missSettings(), api.missBoard()]);
   const mine = state.user ? await Promise.all([api.myMissVotes(state.user.id, st.current_round).catch(() => []), api.missWallet(state.user.id).catch(() => 0), api.myContestant(state.user.id).catch(() => null)]) : [[], 0, null];
   await signPhotos([...board.map(c => c.photo_path), mine[2]?.photo_path]);
-  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2] };
+  const gifts = mine[2]?.id ? await api.myGifts(mine[2].id).catch(() => []) : [];
+  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2], gifts };
   const fav = missFavs(); let ch = false;
   for (const v of state.miss.myVotes){ const id = Number(v.contestant_id); if (!fav.includes(id) && !missUnfav().includes(id)){ fav.push(id); ch = true; } }
   if (ch) store.set('mp_fav', fav);
@@ -283,6 +296,7 @@ function renderUser(){
   const theme = `<button class="theme-btn" data-act="theme" title="${esc(dark ? t('theme_light') : t('theme_dark'))}" aria-label="${esc(dark ? t('theme_light') : t('theme_dark'))}">${dark ? ICON_SUN : ICON_MOON}</button>`;
   $('#userArea').innerHTML = lang + theme + (state.user
     ? `${realAdmin() ? `<button class="btn viewtoggle" data-act="asuser">${state.asUser ? t('view_user') : t('view_admin')}</button>` : ''}${isAdmin() ? `<span class="badge">${t('admin')}</span>` : ''}
+       ${state.miss?.me?.id ? (u => `<button class="hbell" data-act="gifts" title="${esc(t('gf_title'))}" aria-label="${esc(t('gf_title'))}">🔔${u ? `<i>${u}</i>` : ''}</button>`)((state.miss.gifts || []).filter(g => !g.seen).length) : ''}
        <button class="hcred" data-act="credits" title="${esc(t('buy'))}">💎 <span class="hl">${t('credits')}: </span><b>${state.miss?.credits ?? 0}</b></button><button class="btn hbuy" data-act="credits">${t('buy')}</button>
        <button class="btn ghost" data-act="profile">${t('profile')}</button><button class="btn" data-act="logout">${t('logout')}</button>`
     : `<button class="btn primary" data-act="login">${t('login')}</button>`);
@@ -508,9 +522,19 @@ function missGroup(g){
       </div>`; }).join('')}</div></section>`;
 }
 const CREDIT_STEPS = [10, 50, 100, 200, 500, 1000];
-function creditTiles(id){
+function giftForm(){
+  const on = store.get('mp_gift_on', false), nick = store.get('mp_nick', ''), cc = state.profile?.country;
+  return `<div class="gform">
+    <label class="check"><input type="checkbox" id="gfOn" ${on ? 'checked' : ''}> <b>🔔 ${esc(t('gf_on'))}</b></label>
+    <div class="gf-more" ${on ? '' : 'hidden'}>
+      <p class="small" style="margin:2px 0 6px">${esc(t('gf_on_hint'))}</p>
+      <div class="gf-nick"><input type="text" id="gfNick" maxlength="24" placeholder="${esc(t('gf_nick'))}" value="${esc(nick)}"><span>${cc ? flagOf(cc) : ''}</span></div>
+      <div class="gf-msgs" role="radiogroup" aria-label="${esc(t('gf_msg'))}">${GIFT_MSGS.map(k => `<button type="button" class="chip gf-m" data-gfm="${k}">${esc(t(k))}</button>`).join('')}</div>
+    </div></div>`;
+}
+function creditTiles(id, label){
   const have = state.miss?.credits ?? 0, open = missVoteOpen();
-  return `<div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > have ? 'short' : ''}" data-mvotecred="${id}" data-n="${n}" ${open ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
+  return `${state.user ? giftForm() : ''}${label ? `<p class="small" style="margin:0 0 6px">${esc(label)}</p>` : ''}<div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > have ? 'short' : ''}" data-mvotecred="${id}" data-n="${n}" ${open ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
     <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(have) })) : ''} <button class="linkbtn" data-act="credits">${esc(t('cr_buy'))}</button></p>`;
 }
 const credBtn = id => `<button class="btn mcredb" data-mcredopen="${id}" ${missVoteOpen() ? '' : 'disabled'} title="${esc(t('vote_credits'))}" aria-label="${esc(t('vote_credits'))}">💎</button>`;
@@ -520,16 +544,16 @@ function openMissCreditVote(id){ // quick credit-vote popup from the board
   const pos = missPos(id);
   openModal(`<h2>💎 ${esc(t('support', { name: c.first_name }))}</h2>
     <p class="sub">${flagOf(c.country)} ${esc(t('group_n', { n: c.group_no }))} · ${votesTxt(c.votes)}${pos ? ' · ' + missPosLine(pos) : ''}</p>
-    <p class="small" style="margin:0 0 6px">${esc(t('cr_pick'))}</p>
-    ${creditTiles(id)}`);
+    ${creditTiles(id, t('cr_pick'))}`);
 }
-async function onMissVote(id, credits){
+async function onMissVote(id, credits, gift){
   if (!state.user) return openLogin();
   if (!state.profile) return openProfile();
   try {
-    await api.missVote(state.user.id, id, credits || 0);
+    if (credits && gift) await api.missVoteGift(state.user.id, id, credits, gift.nick, gift.msg);
+    else await api.missVote(state.user.id, id, credits || 0);
     if (!missFavs().includes(id)) store.set('mp_fav', [...missFavs(), id]);
-    toast(credits ? t('votes_added', { n: credits }) : t('voted'));
+    toast(credits ? t('votes_added', { n: credits }) + (gift ? ' · 🔔 ' + t('gf_sent') : '') : t('voted'));
     await loadMiss(); renderMiss();
     return true;
   } catch(err){ toast(errMsg(err), true); return false; }
@@ -557,8 +581,7 @@ async function openMissProfile(id){
       <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div>
       ${inRound ? `<div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
         <button class="btn primary mvbig" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote')}</button>
-        <p class="small" style="margin:10px 0 6px">${esc(t('cr_or'))}</p>
-        ${creditTiles(c.id)}</div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
+        <div style="margin-top:10px">${creditTiles(c.id, t('cr_or'))}</div></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
       <p class="small" style="margin-top:10px">${t('profile_link')} <a href="#c-${c.id}">${esc(missUrl(c.id))}</a></p>
     </div></div>`, true);
   $('#adPhoto')?.addEventListener('change', async e => { if (await adminSetPhoto(c.id, e.target.files[0])) openMissProfile(c.id); });
@@ -592,6 +615,19 @@ function openMissCredits(){
         <b class="crn">💎 ${p.n}</b><span class="crp">${usd(p.usd)}</span><span class="small">${esc(t('cr_per', { p: usd(per) }))}</span></button>`; }).join('')}</div>
     <p class="small" style="margin:10px 0 0">${esc(t('cr_pay_soon'))}</p>`);
 }
+function giftsToast(){ // contestant: once per visit, tell her about unread praise
+  const n = (state.miss?.gifts || []).filter(g => !g.seen).length;
+  if (n && !sessionStorage.getItem('mp_gtoast')){ try { sessionStorage.setItem('mp_gtoast', '1'); } catch {} toast('🔔 ' + t('gf_new', { n })); }
+}
+async function openGifts(){
+  const me = state.miss?.me; if (!me?.id) return;
+  const list = await api.myGifts(me.id).catch(() => state.miss.gifts || []);
+  openModal(`<h2>🔔 ${esc(t('gf_title'))}</h2>${list.length ? `<div class="glist">${list.map(g => `<div class="gitem ${g.seen ? '' : 'new'}">
+      <div><b>💎 ${g.credits}</b> · ${esc(g.nick)} ${g.country ? flagOf(g.country) : ''}${g.msg && GIFT_MSGS.includes(g.msg) ? `<div class="gmsg">„${esc(t(g.msg))}“</div>` : ''}</div>
+      <span class="small">${esc(fmtDateTime(g.created_at))}</span></div>`).join('')}</div>` : `<p class="sub">${esc(t('gf_empty'))}</p>`}`);
+  if (list.some(g => !g.seen)){ await api.giftsSeen(me.id).catch(() => {}); state.miss.gifts = list.map(g => ({ ...g, seen: true })); renderUser(); }
+}
+document.addEventListener('change', e => { if (e.target.id === 'gfOn'){ store.set('mp_gift_on', e.target.checked); const m = document.querySelector('.gf-more'); if (m) m.hidden = !e.target.checked; } });
 async function buyCredits(n){
   if (!state.user) return openLogin();
   if (api.mode !== 'demo') return toast(t('cr_pay_soon'));
@@ -879,10 +915,13 @@ document.addEventListener('click', async e => {
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
   if (d.mcredopen) return openMissCreditVote(Number(d.mcredopen));
   if (d.crbuy) return buyCredits(Number(d.crbuy));
+  if (d.gfm){ const was = tg.classList.contains('on'); document.querySelectorAll('.gf-m.on').forEach(b => b.classList.remove('on')); if (!was) tg.classList.add('on'); return; }
   if (d.mvotecred){ // credit votes: first click arms the button, second click confirms
     const n = Number(d.n); if (!(n > 0)) return;
     if (!state.user) return openLogin();
     if (n > (state.miss?.credits ?? 0)){ toast(`${errMsg(new Error('E:NO_CREDITS'))} ${t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) })}`, true); return; }
+    const gOn = $('#gfOn')?.checked, gNick = ($('#gfNick')?.value || '').trim();
+    if (gOn && !NICK_OK(gNick)){ toast(t('gf_nick_need'), true); $('#gfNick')?.focus(); return; }
     if (!tg.classList.contains('arm')){
       document.querySelectorAll('.mcbtn.arm').forEach(b => { b.classList.remove('arm'); b.textContent = '+' + b.dataset.n; });
       tg.classList.add('arm'); tg.textContent = t('cr_confirm', { n });
@@ -890,7 +929,9 @@ document.addEventListener('click', async e => {
       return;
     }
     tg.disabled = true;
-    if (await onMissVote(Number(d.mvotecred), n)) closeModal(); else if (tg.isConnected){ tg.disabled = false; tg.classList.remove('arm'); tg.textContent = '+' + n; }
+    if (gOn) store.set('mp_nick', gNick);
+    const gift = gOn ? { nick: gNick, msg: document.querySelector('.gf-m.on')?.dataset.gfm || null } : null;
+    if (await onMissVote(Number(d.mvotecred), n, gift)) closeModal(); else if (tg.isConnected){ tg.disabled = false; tg.classList.remove('arm'); tg.textContent = '+' + n; }
     return; }
   if (d.mfav){ const on = missToggleFav(Number(d.mfav)); toast(on ? t('fav_added') : t('fav_removed')); renderMiss(); return; }
   if (d.mflag){ state.missFlag = state.missFlag === d.mflag ? null : d.mflag; state.missView = 'all'; closeModal(); renderMiss(); return; }
@@ -915,6 +956,7 @@ document.addEventListener('click', async e => {
     case 'theme': { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; try { localStorage.setItem('mp_theme', next); } catch {} renderUser(); return; }
     case 'signup': return openMissSignup();
     case 'credits': return openMissCredits();
+    case 'gifts': return openGifts();
     case 'togglephotos': { const st = state.miss.st, hide = !photosHidden();
       try { await api.missSaveSettings({ ui: { ...(st.ui || {}), hide_photos: hide } }); await loadMiss(); renderMiss(); toast(hide ? t('ph_hidden_toast') : t('ph_shown_toast')); } catch(err){ toast(errMsg(err), true); }
       return; }
@@ -981,7 +1023,7 @@ try {
   state.geo = CONFIG.PRIVATE ? false : await geoBlocked();
   if (state.geo && !realAdmin()) showGeoBlock();
   else if (privateGate()) {}
-  else { await loadMiss(); renderMiss(); route(); if (!continueJoin() && state.user && !state.profile) openProfile(); }
+  else { await loadMiss(); renderMiss(); route(); if (!continueJoin() && state.user && !state.profile) openProfile(); giftsToast(); }
   api.onAuth(async () => { if (!$('#modal').hidden && $('#pwForm')) closeModal(); await loadAuth(); renderUser(); if (state.geo && !realAdmin()) return showGeoBlock(); if (privateGate()) return; await loadMiss(); renderMiss(); if (!continueJoin() && state.user && !state.profile) openProfile(); });
 } catch(err){
   console.error(err);
