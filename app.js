@@ -392,7 +392,7 @@ function missFavView(){
         <div class="mfav-info"><b>${esc(c.first_name)}</b> ${flagOf(c.country)} <span class="small">· ${votesTxt(c.votes)}</span><div class="mfav-st">${missPosLine(p)}</div></div></div>
       ${missMiniTable(c, true)}
       <div class="mfav-act"><button class="btn primary" data-mvote="${c.id}" ${w || !missVoteOpen() ? 'disabled' : ''}>${w ? tCd('next_vote_short', w.left) : missEnded() ? t('round_ended') : t('vote')}</button>
-        <button class="btn" data-mopen="${c.id}">${t('share')}</button></div></div>`; }).join('')}</div>
+        ${credBtn(c.id, !!w)}<button class="btn" data-mopen="${c.id}">${t('share')}</button></div></div>`; }).join('')}</div>
     <p class="small" style="margin:8px 0 0">${t('fav_note')}</p>`;
 }
 function missCountTxt(){ const left = missEndsLeft(); return left ? fmtHMS(left) : missEnded() ? t('round_ended') : ''; }
@@ -486,7 +486,7 @@ function missGroupCompact(g){
         <button class="mflagbtn mgc-f" data-mflag="${esc(c.country)}" title="${esc(countryName(c.country))}">${flagOf(c.country)}</button>
         <button class="mgc-name" data-mopen="${c.id}">${esc(c.first_name)}${fav.includes(c.id) ? ' <span class="mgc-star">★</span>' : ''}</button>
         <span class="mgc-v"><b>${c.votes}</b>${r > adv && missUi('need') ? `<i class="mneed">−${list[adv - 1].votes - c.votes + 1}</i>` : ''}</span>
-        <button class="btn ${mine ? '' : 'primary'} mgc-b" data-mvote="${c.id}" ${cd || !open ? 'disabled' : ''}>${mine ? '✓' : t('vote')}</button></div>`; }).join('')}</div>`;
+        <button class="btn ${mine ? '' : 'primary'} mgc-b" data-mvote="${c.id}" ${cd || !open ? 'disabled' : ''}>${mine ? '✓' : t('vote')}</button>${credBtn(c.id, !!cd)}</div>`; }).join('')}</div>`;
 }
 function missGroup(g){
   const list = missSorted(g), adv = missAdvOf(list.length), fav = missFavs(), f = state.missFlag;
@@ -501,10 +501,25 @@ function missGroup(g){
         <button class="mflagbig" data-mflag="${esc(c.country)}" title="${esc(t('flag_title', { c: countryName(c.country) }))}">${flagOf(c.country)}</button>
         ${r > adv && missUi('need') ? `<i class="mneedpill" title="${esc(t('short_title', { a: adv }))}">${esc(t('short_n', { n: list[adv - 1].votes - c.votes + 1 }))}</i>` : ''}</div>
         <div class="mline"><span class="mnm">${esc(c.first_name)}<small>${c.age}</small></span>${isAdmin() ? `<label class="madph" title="${esc(t('ad_photo'))}" aria-label="${esc(t('ad_photo'))}: ${esc(c.first_name)}">📷<input type="file" accept="image/*" data-adph="${c.id}" hidden></label>` : ''}<span class="mvotes"><b>${c.votes}</b></span></div>
-        <button class="btn ${mineHere ? '' : 'primary'} mvote" data-mvote="${c.id}" ${cd || !missVoteOpen() ? 'disabled' : ''}>${mineHere ? t('your_vote') : missEnded() ? t('round_ended') : t('vote')}</button>
+        <div class="mvrow"><button class="btn ${mineHere ? '' : 'primary'} mvote" data-mvote="${c.id}" ${cd || !missVoteOpen() ? 'disabled' : ''}>${mineHere ? t('your_vote') : missEnded() ? t('round_ended') : t('vote')}</button>${credBtn(c.id, !!cd)}</div>
       </div>`; }).join('')}</div></section>`;
 }
 const CREDIT_STEPS = [10, 50, 100, 200, 500, 1000];
+function creditTiles(id){
+  const have = state.miss?.credits ?? 0, open = missVoteOpen();
+  return `<div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > have ? 'short' : ''}" data-mvotecred="${id}" data-n="${n}" ${open ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
+    <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(have) })) : ''} <button class="linkbtn" data-act="credits">${esc(t('cr_buy'))}</button></p>`;
+}
+const credBtn = (id, hot) => `<button class="btn mcredb ${hot ? 'hot' : ''}" data-mcredopen="${id}" ${missVoteOpen() ? '' : 'disabled'} title="${esc(t('vote_credits'))}" aria-label="${esc(t('vote_credits'))}">💎</button>`;
+function openMissCreditVote(id){ // quick credit-vote popup from the board
+  if (!state.user) return openLogin();
+  const c = state.miss?.board.find(x => x.id === id); if (!c) return;
+  const pos = missPos(id);
+  openModal(`<h2>💎 ${esc(t('support', { name: c.first_name }))}</h2>
+    <p class="sub">${flagOf(c.country)} ${esc(t('group_n', { n: c.group_no }))} · ${votesTxt(c.votes)}${pos ? ' · ' + missPosLine(pos) : ''}</p>
+    <p class="small" style="margin:0 0 6px">${esc(t('cr_pick'))}</p>
+    ${creditTiles(id)}`);
+}
 async function onMissVote(id, credits){
   if (!state.user) return openLogin();
   if (!state.profile) return openProfile();
@@ -540,8 +555,7 @@ async function openMissProfile(id){
       ${inRound ? `<div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
         <button class="btn primary mvbig" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote')}</button>
         <p class="small" style="margin:10px 0 6px">${esc(t('cr_or'))}</p>
-        <div class="mcgrid">${CREDIT_STEPS.map(n => `<button class="btn mcbtn ${state.user && n > (state.miss?.credits ?? 0) ? 'short' : ''}" data-mvotecred="${c.id}" data-n="${n}" ${missVoteOpen() ? '' : 'disabled'}>+${n}</button>`).join('')}</div>
-        <p class="small" style="margin:6px 0 0">${t('credit_eq')} ${state.user ? esc(t('you_have', { n: creditsTxt(state.miss?.credits ?? 0) })) : ''} <button class="linkbtn" data-act="credits">${esc(t('cr_buy'))}</button></p></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
+        ${creditTiles(c.id)}</div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}` : ''}
       <p class="small" style="margin-top:10px">${t('profile_link')} <a href="#c-${c.id}">${esc(missUrl(c.id))}</a></p>
     </div></div>`, true);
   $('#adPhoto')?.addEventListener('change', async e => { if (await adminSetPhoto(c.id, e.target.files[0])) openMissProfile(c.id); });
@@ -842,6 +856,7 @@ document.addEventListener('click', async e => {
   const d = tg.dataset;
   if (d.mopen){ if (location.hash === '#c-' + d.mopen) openMissProfile(Number(d.mopen)); else location.hash = 'c-' + d.mopen; return; }
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
+  if (d.mcredopen) return openMissCreditVote(Number(d.mcredopen));
   if (d.mvotecred){ // credit votes: first click arms the button, second click confirms
     const n = Number(d.n); if (!(n > 0)) return;
     if (!state.user) return openLogin();
