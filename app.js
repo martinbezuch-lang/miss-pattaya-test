@@ -635,6 +635,12 @@ async function openGifts(){
       <span class="small">${esc(fmtDateTime(g.created_at))}</span></div>`).join('')}</div>` : `<p class="sub">${esc(t('gf_empty'))}</p>`}`);
   if (list.some(g => !g.seen)){ await api.giftsSeen(me.id).catch(() => {}); state.miss.gifts = list.map(g => ({ ...g, seen: true })); renderUser(); }
 }
+document.addEventListener('click', e => { // social links: free, but only for signed-in visitors
+  const a = e.target.closest && e.target.closest('a.msico, .mlinks a');
+  if (!a || state.user) return;
+  e.preventDefault(); e.stopPropagation();
+  toast(t('soc_login')); openLogin();
+}, true);
 document.addEventListener('change', e => { if (e.target.id === 'gfOn'){ store.set('mp_gift_on', e.target.checked); const m = document.querySelector('.gf-more'); if (m) m.hidden = !e.target.checked; } });
 async function buyCredits(n){
   if (!state.user) return openLogin();
