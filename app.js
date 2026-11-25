@@ -412,7 +412,8 @@ function missFavView(){
     <p class="small" style="margin:8px 0 0">${t('fav_note')}</p>`;
 }
 function missCountTxt(){ const left = missEndsLeft(); return left ? fmtHMS(left) : missEnded() ? t('round_ended') : ''; }
-let missWasEnded = null;
+let missWasEnded = null, missPrevLeft = null;
+const CLOCK_ALERTS = [60, 50, 40, 30, 20, 10, 5, 4, 3, 2, 1.5]; // minutes before the round ends
 setInterval(() => { // every second: round clock, "next vote in" timers; re-render when a timer runs out
   if (!state.miss) return;
   const now = Date.now(), left = missEndsLeft(); let stale = false;
@@ -421,6 +422,13 @@ setInterval(() => { // every second: round clock, "next vote in" timers; re-rend
   document.querySelectorAll('[data-mcount]').forEach(el => { el.textContent = missCountTxt(); });
   const hc = document.querySelector('.mhead-c'); if (hc && left) hc.classList.toggle('urgent', left < 864e5);
   document.body.classList.toggle('lasthour', !!left && left < 36e5); // 💎 pulse in the last hour of the round
+  if (hc && left){ // final countdown: flash at 60, 50, 40, 30, 20, 10, 5, 4, 3, 2 and 1.5 min, nonstop in the last minute
+    const prev = missPrevLeft; missPrevLeft = left;
+    const hit = prev != null && CLOCK_ALERTS.find(m => prev > m * 6e4 && left <= m * 6e4);
+    if (hit){ hc.classList.remove('flash'); void hc.offsetWidth; hc.classList.add('flash'); setTimeout(() => hc.classList.remove('flash'), 3200);
+      toast('⏰ ' + t('t_left', { d: hit >= 5 ? fmtLeft(hit * 6e4) : fmtHMS(hit * 6e4), r: state.miss.st.current_round })); }
+    hc.classList.toggle('final', left <= 6e4);
+  }
   const ended = missEnded(); if (missWasEnded === false && ended) stale = true; missWasEnded = ended;
   if (stale && $('#modal').hidden && !document.querySelector('.cropov')) renderMiss();
 }, 1000);
