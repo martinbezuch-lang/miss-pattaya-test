@@ -86,7 +86,7 @@ function setLang(l){
 setLang(LANG);
 
 const LINK_DEFS = [['instagram','Instagram','https://instagram.com/'],['tiktok','TikTok','https://www.tiktok.com/@'],['youtube','YouTube','https://youtube.com/@'],
-  ['onlyfans','OnlyFans','https://onlyfans.com/'],['x','X / Twitter','https://x.com/'],['linktree','Linktree','https://linktr.ee/'],['web','Web','']];
+  ['x','X / Twitter','https://x.com/'],['linktree','Linktree','https://linktr.ee/'],['web','Web','']];
 const PER_PAGE = 10;
 const EXTRA_Q = [['country','fav_country'],['holiday','fav_holiday'],['sport','fav_sport'],['singer','fav_singer']]; // optional profile questions (miss_contestants.extra)
 const GIFT_MSGS = ['m1','m2','m3','m4','m5','m6'];
@@ -134,7 +134,7 @@ function makeDemoApi(){
     const cc = ['TH','RU','KR','JP','DE','UA','TH','RU','KR','IN','GB','TH','RU','KR','JP','SK','TH','UA','IN','CZ','TH','RU','DE','KR','CN','US','KZ','JP','IN','FR'];
     store.set(K.c, names.map((n, i) => ({ id:i + 1, user_id:'fake-' + i, first_name:n, country:cc[i], birth_date:`${1992 + (i * 7) % 14}-0${1 + i % 9}-1${i % 9}`,
       photo_path:null, city:'Pattaya', favorite_food:'Tom yum', favorite_city:'Bangkok', hobbies:'beach, yoga, travel', about:'Hi, I am ' + n + '!', extra: i % 2 ? {} : { country:'Japan', holiday:'Bali', sport:'Volleyball', singer:'Lisa' },
-      links:{ ...(i % 3 !== 2 ? { instagram:'https://instagram.com/' } : {}), ...(i % 10 === 4 ? { onlyfans:'https://onlyfans.com/' } : {}) }, status:'approved', round:1, group_no:Math.floor(i / 5) + 1, eliminated_round:null, created_at:new Date().toISOString() })));
+      links:{ ...(i % 3 !== 2 ? { instagram:'https://instagram.com/' } : {}) }, status:'approved', round:1, group_no:Math.floor(i / 5) + 1, eliminated_round:null, created_at:new Date().toISOString() })));
     store.set(K.v, names.map((n, i) => ({ contestant_id:i + 1, user_id:'fake', round:1, group_no:Math.floor(i / 5) + 1, votes:Math.floor(Math.random() * 60), paid:false, created_at:'2026-01-01T00:00:00Z' })));
   }
   const age = d => { const b = new Date(d), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
@@ -590,7 +590,7 @@ function missGroup(g){
       return `<div class="mcard ${f ? (c.country === f ? 'hl' : 'dim') : ''} ${r === adv + 1 ? 'cutl' : ''} ${r > adv ? 'outz' : ''}" data-cut="${esc(t('out_zone'))}">
         <div style="position:relative"><button class="mphoto" data-mopen="${c.id}" aria-label="${esc(t('profile_of', { name: c.first_name }))}">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}" loading="lazy">` : `<span>${esc(c.first_name[0] || '?')}</span>`}<i class="mrank ${r <= adv ? 'adv' : ''}" title="${esc(r <= adv ? t('rank_adv') : t('rank_out'))}">${r === 1 && c.votes > 0 ? '👑 ' : ''}${r}.</i></button>
         ${missUi('star') ? `<button class="mstar ${isFav ? 'on' : ''}" data-mfav="${c.id}" aria-label="${esc(isFav ? t('fav_remove') : t('fav_add'))}">${isFav ? '★' : '☆'}</button>` : ''}
-        ${missUi('instagram') && (c.instagram || c.onlyfans) ? `<span class="msoc ${missUi('star') ? '' : 'nostar'}">${c.onlyfans ? `<a class="msico of" href="${esc(normLink('onlyfans', c.onlyfans))}" target="_blank" rel="nofollow noopener ugc" title="OnlyFans" aria-label="OnlyFans ${esc(c.first_name)}">${SOC_ICON.onlyfans}</a>` : ''}${c.instagram ? `<a class="msico ig" href="${esc(normLink('instagram', c.instagram))}" target="_blank" rel="nofollow noopener ugc" title="Instagram" aria-label="Instagram ${esc(c.first_name)}">${SOC_ICON.instagram}</a>` : ''}</span>` : ''}
+        ${missUi('instagram') && c.instagram ? `<span class="msoc ${missUi('star') ? '' : 'nostar'}">${c.instagram ? `<a class="msico ig" href="${esc(normLink('instagram', c.instagram))}" target="_blank" rel="nofollow noopener ugc" title="Instagram" aria-label="Instagram ${esc(c.first_name)}">${SOC_ICON.instagram}</a>` : ''}</span>` : ''}
         <button class="mflagbig" data-mflag="${esc(c.country)}" title="${esc(t('flag_title', { c: countryName(c.country) }))}">${flagOf(c.country)}</button>
         ${r > adv && missUi('need') ? `<i class="mneedpill" title="${esc(t('short_title', { a: adv }))}">${esc(t('short_n', { n: list[adv - 1].votes - c.votes + 1 }))}</i>` : ''}</div>
         <div class="mline"><span class="mnm">${esc(c.first_name)}<small>${c.age}</small></span>${isAdmin() ? `<label class="madph" title="${esc(t('ad_photo'))}" aria-label="${esc(t('ad_photo'))}: ${esc(c.first_name)}">📷<input type="file" accept="image/*" data-adph="${c.id}" hidden></label>` : ''}<span class="mvotes"><b>${c.votes}</b></span></div>
