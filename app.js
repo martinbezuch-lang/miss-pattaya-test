@@ -1064,7 +1064,7 @@ async function renderMissAdmin(){
       <div class="field"><label class="l">🔥 ${t('ad_promo')}</label><input type="number" id="mst_pp" min="0" max="500" step="5" value="${st.ui?.promo?.pct ?? 0}"><span class="small">${t('ad_promo_hint')}</span></div>
       <div class="field"><label class="l">🔥 ${t('ad_promo_end')}</label><input type="datetime-local" id="mst_pu" value="${toLocalInput(st.ui?.promo?.until || new Date(Date.now() + 864e5).toISOString())}"></div>
       <div class="field" style="grid-column:1/-1"><label class="l">🏆 ${esc(t('ad_pz'))}</label>
-        <div class="pz-adm">${[['p1', '🥇 ' + place(1), 200], ['p2', '🥈 ' + place(2), 200], ['p3', '🥉 ' + place(3), 200], ['more', '🎀 ' + t('pz_other'), 200], ['note', t('ad_pz_note'), 300], ['sponsor', t('ad_pz_sp'), 80]].map(([k, l, mx]) => `<label class="small">${esc(l)}<input type="text" data-pz="${k}" maxlength="${mx}" value="${esc(st.ui?.prizes?.[k] || '')}"></label>`).join('')}</div>
+        <div class="pz-adm">${[...PZ_PLACES.map(n => ['p' + n, PZ_MEDAL(n) + ' ' + place(n), 200]), ['more', '🎀 ' + t('pz_other'), 200], ['note', t('ad_pz_note'), 300], ['sponsor', t('ad_pz_sp'), 80]].map(([k, l, mx]) => `<label class="small">${esc(l)}<input type="text" data-pz="${k}" maxlength="${mx}" value="${esc(st.ui?.prizes?.[k] || '')}"></label>`).join('')}</div>
         <span class="small">${esc(t('ad_pz_hint'))}</span></div>
       <div class="field" style="grid-column:1/-1"><label class="l">${t('ad_show')}</label><div class="actions" style="justify-content:flex-start;gap:14px;flex-wrap:wrap">
         ${['instagram', 'star', 'need'].map(k => `<label class="check"><input type="checkbox" data-mui="${k}" ${missUi(k) ? 'checked' : ''}> ${t('ui_' + k)}</label>`).join('')}</div></div>
@@ -1147,11 +1147,13 @@ function openRules(){
     <p class="small">${t('ru_4')}</p>`);
 }
 
+const PZ_PLACES = Array.from({ length: 12 }, (_, i) => i + 1);
+const PZ_MEDAL = n => ['🥇', '🥈', '🥉'][n - 1] || '🏅';
 function openPrizes(){
-  const pz = state.miss.st.ui?.prizes || {}, has = ['p1', 'p2', 'p3', 'more'].some(k => (pz[k] || '').trim());
+  const pz = state.miss.st.ui?.prizes || {}, has = [...PZ_PLACES.map(n => 'p' + n), 'more'].some(k => (pz[k] || '').trim());
   const row = (lbl, txt) => (txt || '').trim() ? `<div class="pz-row"><span class="pz-place">${lbl}</span><div>${esc(txt.trim()).replace(/\n/g, '<br>')}</div></div>` : '';
   openModal(`<h2>🏆 ${esc(t('pz_btn'))}</h2>
-    ${has ? `<div class="pz-list">${row('🥇 ' + esc(place(1)), pz.p1)}${row('🥈 ' + esc(place(2)), pz.p2)}${row('🥉 ' + esc(place(3)), pz.p3)}${row('🎀 ' + esc(t('pz_other')), pz.more)}</div>`
+    ${has ? `<div class="pz-list">${PZ_PLACES.map(n => row(PZ_MEDAL(n) + ' ' + esc(place(n)), pz['p' + n])).join('')}${row('🎀 ' + esc(t('pz_other')), pz.more)}</div>`
       : `<p class="sub">${esc(t('pz_soon'))}</p>`}
     ${(pz.note || '').trim() ? `<p>${esc(pz.note.trim()).replace(/\n/g, '<br>')}</p>` : ''}
     ${(pz.sponsor || '').trim() ? `<p><b>${esc(t('pz_sp', { s: pz.sponsor.trim() }))}</b></p>` : ''}
