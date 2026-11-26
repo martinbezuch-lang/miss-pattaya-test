@@ -11,7 +11,7 @@ const CONFIGS = {
   live: {
     SUPABASE_URL: 'https://gtblftngzitbiwmrvomj.supabase.co',
     SUPABASE_ANON_KEY: 'sb_publishable_p7mVlg_b_GWr9-XjQBrHBw_qzF6XQlC', // public (publishable) key
-    GOOGLE_LOGIN: false, // turn on after enabling Google in Supabase → Authentication → Providers
+    GOOGLE_LOGIN: true, // Google provider enabled in Supabase (project miss-of-pattaya in Google Cloud)
     VAPID_PUBLIC: 'BE3jm13klfmX19K1fbHxN4yugceZ-lechHZoClRqpx0G7etCnTGoN15KFlfx4a93bZMcziIdhfMxBbXG1UQv0Cs', // web push (public key – the private one is only in Supabase secrets)
     PRIVATE: false
   },
