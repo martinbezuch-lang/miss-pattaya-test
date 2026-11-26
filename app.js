@@ -754,7 +754,7 @@ async function openGifts(){ // the bell: notification history (announcements + p
   const list = me?.id ? await api.myGifts(me.id).catch(() => m.gifts || []) : [];
   const seen = Date.parse(m.notesSeen || 0) || 0;
   const items = [...(m.notes || []).map(n => ({ at: Date.parse(n.created_at), html: `<div class="gitem ${Date.parse(n.created_at) > seen ? 'new' : ''}">
-      <div><b>${esc(n.title)}</b>${n.body ? `<div class="gmsg">${esc(n.body)}</div>` : ''}</div><span class="small">${esc(fmtDateTime(n.created_at))}</span></div>` })),
+      <div>${/^#miss-\d+$/.test(n.url || '') ? `<a class="mlink" href="${n.url}"><b>${esc(n.title)}</b></a>` : `<b>${esc(n.title)}</b>`}${n.body ? `<div class="gmsg">${esc(n.body)}</div>` : ''}</div><span class="small">${esc(fmtDateTime(n.created_at))}</span></div>` })),
     ...list.map(g => ({ at: Date.parse(g.created_at), html: `<div class="gitem ${g.seen ? '' : 'new'}">
       <div><b>💎 ${g.credits}</b> · ${esc(g.nick)} ${g.country ? flagOf(g.country) : ''}${g.msg && GIFT_MSGS.includes(g.msg) ? `<div class="gmsg">„${esc(t(g.msg))}“</div>` : ''}</div>
       <span class="small">${esc(fmtDateTime(g.created_at))}</span></div>` }))].sort((a, b) => b.at - a.at);
