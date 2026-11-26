@@ -180,6 +180,23 @@ function makeDemoApi(){
     async myGifts(cid){ return store.get(K.g, []).filter(g => g.contestant_id === Number(cid)); },
     async giftsSeen(cid){ store.set(K.g, store.get(K.g, []).map(g => g.contestant_id === Number(cid) ? { ...g, seen: true } : g)); },
     async myContestant(uid){ return store.get(K.c, []).find(c => c.user_id === uid) || null; },
+    /* group feed (demo version of miss_feed) */
+    async missFeed(tab, offset, limit){
+      const st = store.get(K.set), board = store.get(K.c, []).filter(c => c.status === 'approved' && !c.eliminated_round && c.round === st.current_round && c.group_no).map(pub);
+      const uid = sess()?.id, mine = new Set(store.get(K.v, []).filter(v => v.user_id === uid && v.round === st.current_round).map(v => v.group_no));
+      const seed = (uid || VISIT_ID) + ':' + new Date().toISOString().slice(0, 10), rnd = g => { let h = 2166136261; for (const ch of seed + ':g' + g) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); h ^= h >>> 15; h = Math.imul(h, 2246822507); h ^= h >>> 13; return (h >>> 0) / 4294967296; };
+      let gs = [...new Set(board.map(c => c.group_no))].map(g => { const l = board.filter(c => c.group_no === g).sort((a, b) => b.votes - a.votes), adv = Math.max(l.length - (st.eliminate_count ?? 2), 1);
+        return { group_no: g, total_votes: l.reduce((a, c) => a + c.votes, 0), gap: l[adv] ? l[adv - 1].votes - l[adv].votes : null, voted: mine.has(g) }; });
+      if (tab === 'mine') gs = gs.filter(g => g.voted);
+      gs.sort(tab === 'top' ? (a, b) => b.total_votes - a.total_votes : tab === 'close' ? (a, b) => (a.gap ?? 1e9) - (b.gap ?? 1e9) || b.total_votes - a.total_votes : tab === 'mine' ? (a, b) => a.group_no - b.group_no : (a, b) => rnd(a.group_no) - rnd(b.group_no));
+      return { round: st.current_round, total: gs.length, groups: gs.slice(offset, offset + limit) };
+    },
+    async groupSeen(){},
+    async withdraw(cid, reason){
+      const l = store.get(K.c, []), uid = sess()?.id, c = cid ? l.find(x => x.id === cid) : l.find(x => x.user_id === uid);
+      if (!c) throw new Error('E:NOT_FOUND'); if (c.status === 'withdrawn') throw new Error('E:ALREADY_WITHDRAWN');
+      c.status = 'withdrawn'; c.withdraw_reason = reason || null; store.set(K.c, l); return { withdrawn: c.id, refunded_users: 0, replacement: null };
+    },
     async saveContestant(uid, row){
       const l = store.get(K.c, []), i = l.findIndex(c => c.user_id === uid);
       if (row.birth_date && age(row.birth_date) < 18) throw new Error('E:UNDER18');
@@ -271,6 +288,9 @@ async function makeSupabaseApi(){
     async myGifts(cid){ return chk(await sb.from('miss_gifts').select('id,contestant_id,nick,country,credits,msg,seen,created_at').eq('contestant_id', cid).order('created_at', { ascending:false }).limit(100)); },
     async giftsSeen(){ chk(await sb.rpc('miss_gifts_seen')); },
     async myContestant(uid){ return chk(await sb.from('miss_contestants').select('*').eq('user_id', uid).maybeSingle()); },
+    async missFeed(tab, offset, limit){ return chk(await sb.rpc('miss_feed', { p_vid: VISIT_ID, p_tab: tab, p_offset: offset, p_limit: limit, p_q: null })); },
+    async groupSeen(groups){ await sb.rpc('miss_group_seen', { p_groups: groups }); },
+    async withdraw(cid, reason){ return chk(await sb.rpc('miss_withdraw', { p_contestant: cid ?? null, p_reason: reason || null })); },
     async saveContestant(uid, row){
       const cur = chk(await sb.from('miss_contestants').select('id').eq('user_id', uid).maybeSingle());
       if (cur) chk(await sb.from('miss_contestants').update(row).eq('id', cur.id)); else chk(await sb.from('miss_contestants').insert({ ...row, user_id:uid }));
@@ -343,7 +363,25 @@ async function loadMiss(){
   const fav = missFavs(); let ch = false;
   for (const v of state.miss.myVotes){ const id = Number(v.contestant_id); if (!fav.includes(id) && !missUnfav().includes(id)){ fav.push(id); ch = true; } }
   if (ch) store.set('mp_fav', fav);
+  await loadFeed();
   applyStaticText();
+}
+/* group order comes from miss_feed (For you / Closest races / Top / My groups), 5 groups per page */
+const FEED_N = 5, FEED_TABS = ['foryou', 'close', 'top', 'mine'];
+async function loadFeed(){
+  if (!api.missFeed) return (state.feed = null);
+  let tab = state.feedTab || 'foryou'; if (tab === 'mine' && !state.user) tab = state.feedTab = 'foryou';
+  const page = Math.max(1, state.missPage || 1);
+  try {
+    let r = await api.missFeed(tab, (page - 1) * FEED_N, FEED_N);
+    if (!r.groups.length && page > 1 && r.total){ state.missPage = Math.ceil(r.total / FEED_N); r = await api.missFeed(tab, (state.missPage - 1) * FEED_N, FEED_N); }
+    state.feed = { tab, total: Number(r.total) || 0, groups: (r.groups || []).map(g => Number(g.group_no)) };
+  } catch { state.feed = null; }
+}
+const feedSeen = new Set();
+function markGroupsSeen(groups){
+  const k = groups.join(','); if (!groups.length || feedSeen.has(k)) return; feedSeen.add(k);
+  api.groupSeen?.(groups).catch?.(() => {});
 }
 
 /* ---------------- header ---------------- */
@@ -534,9 +572,9 @@ function renderMiss(){
   setTimeout(renderPushBox, 0);
   const m = state.miss, st = m.st, el = $('#app');
   const groups = [...new Set(m.board.map(c => c.group_no))].sort((a, b) => a - b);
-  const pages = Math.max(1, Math.ceil(groups.length / PER_PAGE));
+  const fd = state.feed, per = fd ? FEED_N : PER_PAGE, pages = Math.max(1, Math.ceil((fd ? fd.total : groups.length) / per));
   state.missPage = Math.min(Math.max(1, state.missPage || 1), pages);
-  const shown = groups.slice((state.missPage - 1) * PER_PAGE, state.missPage * PER_PAGE);
+  const shown = fd ? fd.groups.filter(g => groups.includes(g)) : groups.slice((state.missPage - 1) * PER_PAGE, state.missPage * PER_PAGE);
   const regOpen = Date.now() < Date.parse(st.registration_until);
   const isWoman = state.profile?.gender === 'female', view = state.missView || 'all';
   let cta = '';
@@ -562,9 +600,11 @@ function renderMiss(){
       ${fb.chips}
       ${view === 'all' ? `<span class="mlay"><button class="chip ${missLayout() === 'photo' ? 'on' : ''}" data-mlayout="photo" title="${esc(t('lay_photo'))}">▦</button><button class="chip ${missLayout() === 'list' ? 'on' : ''}" data-mlayout="list" title="${esc(t('lay_list'))}">☰</button></span>` : ''}</div>
     ${fb.note}
+    ${view === 'all' && fd ? `<div class="mtabs mfeedt">${FEED_TABS.filter(k => k !== 'mine' || state.user).map(k => `<button class="chip ${fd.tab === k ? 'on' : ''}" data-mfeed="${k}">${esc(t('ft_' + k))}</button>`).join('')}</div>` : ''}
     ${view === 'fav' ? missFavView() : view === 'stats' ? missStatsView() : `${pager}
-    ${shown.length ? (missLayout() === 'list' ? `<div class="mfavs">${shown.map(g => missGroupCompact(g)).join('')}</div>` : shown.map(g => missGroup(g)).join('')) : `<div class="list"><div class="empty">${t('no_approved')}</div></div>`}
+    ${shown.length ? (missLayout() === 'list' ? `<div class="mfavs">${shown.map(g => missGroupCompact(g)).join('')}</div>` : shown.map(g => missGroup(g)).join('')) : `<div class="list"><div class="empty">${fd && fd.tab === 'mine' ? t('ft_mine_empty') : t('no_approved')}</div></div>`}
     ${pager}`}`;
+  if (view === 'all' && fd) markGroupsSeen(shown);
   if (isAdmin()) renderMissAdmin();
   if (isAdmin() && missEnded() && state.missNrShown !== st.current_round && $('#modal').hidden){ state.missNrShown = st.current_round; openMissNewRound(); }
 }
@@ -649,6 +689,7 @@ async function openMissProfile(id){
   openModal(`<div class="mprof">
     <div class="mprof-side"><div class="mprof-mhead"><h2>${esc(c.first_name)}</h2><p class="sub" style="margin:0">${sub}</p></div><div class="mprof-photo">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}">` : `<span>${esc(c.first_name[0] || '?')}</span>`}</div>
       ${isAdmin() ? `<label class="btn mprof-adph" style="display:block;text-align:center;margin:8px 0;cursor:pointer">📷 ${esc(t('ad_photo'))}<input type="file" id="adPhoto" accept="image/*" hidden></label>` : ''}
+      ${isAdmin() && ['approved', 'pending'].includes(c.status) ? `<button class="linkbtn wdlink mprof-adph" data-mwithdraw="${c.id}" data-name="${esc(c.first_name)}" style="display:block;margin:0 auto 8px">${esc(t('wd_btn_adm'))}</button>` : ''}
       <div class="mprof-stats">${hist.length ? `<div class="mhist">${hist.map(h => `<div class="mhist-r"><span>${esc(t('hist_round', { r: h.round }))}</span><span>${esc(place(h.place))}</span><span>${votesTxt(h.votes)}</span><b class="${h.advanced ? 'up' : 'down'}">${h.advanced ? t('hist_adv') : t('hist_out')}</b></div>`).join('')}</div>` : ''}
       ${inRound ? `<div class="mstat">${esc(t('in_round', { v: votesTxt(c.votes), r: c.round, g: c.group_no }))}${pos ? '<br>' + missPosLine(pos) : ''}${state.miss?.st.round_ends_at ? `<br><span class="small">⏳ ${missEnded() ? t('round_ended') : `${t('ends_in')} <b data-mcount>${missCountTxt()}</b>`}</span>` : ''}</div>${boardC ? missMiniTable(boardC) : ''}` : c.eliminated_round ? `<div class="mstat">${esc(t('left_in', { r: c.eliminated_round }))}</div>` : ''}</div></div>
     <div class="mprof-body"><h2>${esc(c.first_name)}</h2>
@@ -823,6 +864,7 @@ async function openMissSignup(viaJoin){
         <div class="row2">${LINK_DEFS.map(([k, l]) => `<input type="text" id="ml_${k}" maxlength="200" placeholder="${l}" value="${esc(L[k] || '')}">`).join('')}</div></div>
       ${me.id ? '' : `<label class="check field"><input type="checkbox" id="mok" required> ${t('consent')}</label>`}
       <div class="err" id="mErr"></div>
+      ${me.id && ['approved', 'pending'].includes(me.status) ? `<p class="small" style="margin:4px 0 0"><button type="button" class="linkbtn wdlink" data-act="withdraw">${esc(t('wd_btn'))}</button></p>` : ''}
       <div class="actions">${me.id ? `<button type="button" class="btn ghost" data-close>${t('cancel')}</button>` : `<button type="button" class="btn ghost" data-act="draftlater">${t('su_later')}</button>`}<button class="btn primary" id="msave">${me.id ? t('save_changes') : t('submit_entry')}</button></div>
     </form>`, true);
   let photoBlob = null;
@@ -848,6 +890,26 @@ async function openMissSignup(viaJoin){
       closeModal(); await loadMiss(); renderMiss();
       if (isNew && api.idOn) openIdVerify();
     } catch(err){ $('#mErr').textContent = errMsg(err); btn.disabled = false; }
+  });
+}
+/* ---------------- withdrawal from the competition ---------------- */
+function openWithdraw(cid){
+  const byAdmin = !!cid && isAdmin(), name = byAdmin ? (state.miss?.board.find(c => c.id === cid)?.first_name || document.querySelector(`[data-mwithdraw="${cid}"]`)?.dataset.name || '#' + cid) : '';
+  openModal(`<h2>${esc(byAdmin ? t('wd_title_adm', { name }) : t('wd_title'))}</h2>
+    <p class="sub">${esc(byAdmin ? t('wd_text_adm', { name }) : t('wd_text'))}</p>
+    <form id="wdForm">
+      <div class="field"><label class="l" for="wdR">${esc(t('wd_reason'))}</label><textarea id="wdR" maxlength="300" rows="3"></textarea></div>
+      <label class="check field"><input type="checkbox" id="wdOk" required> ${esc(t('wd_ok'))}</label>
+      <div class="err" id="wdErr"></div>
+      <div class="actions"><button type="button" class="btn ghost" data-close>${t('cancel')}</button><button class="btn danger" id="wdGo">${esc(t('wd_go'))}</button></div>
+    </form>`);
+  $('#wdForm').addEventListener('submit', async e => {
+    e.preventDefault(); const b = $('#wdGo'); b.disabled = true; $('#wdErr').textContent = '';
+    try {
+      const r = await api.withdraw(byAdmin ? cid : null, $('#wdR').value.trim());
+      toast(byAdmin ? t('wd_done_adm', { n: r?.refunded_users ?? 0 }) + (r?.replacement ? ' · ' + t('wd_repl', { id: r.replacement }) : '') : t('wd_done'));
+      closeModal(); await loadMiss(); renderMiss();
+    } catch(err){ $('#wdErr').textContent = errMsg(err); b.disabled = false; }
   });
 }
 /* ---------------- quick pre-registration (no account needed) ---------------- */
@@ -1064,7 +1126,7 @@ async function renderMissAdmin(){
       <div class="field"><label class="l">🔥 ${t('ad_promo')}</label><input type="number" id="mst_pp" min="0" max="500" step="5" value="${st.ui?.promo?.pct ?? 0}"><span class="small">${t('ad_promo_hint')}</span></div>
       <div class="field"><label class="l">🔥 ${t('ad_promo_end')}</label><input type="datetime-local" id="mst_pu" value="${toLocalInput(st.ui?.promo?.until || new Date(Date.now() + 864e5).toISOString())}"></div>
       <div class="field" style="grid-column:1/-1"><label class="l">🏆 ${esc(t('ad_pz'))}</label>
-        <div class="pz-adm">${[...PZ_PLACES.map(n => ['p' + n, PZ_MEDAL(n) + ' ' + place(n), 200]), ['more', '🎀 ' + t('pz_other'), 200], ['note', t('ad_pz_note'), 300], ['sponsor', t('ad_pz_sp'), 80]].map(([k, l, mx]) => `<label class="small">${esc(l)}<input type="text" data-pz="${k}" maxlength="${mx}" value="${esc(st.ui?.prizes?.[k] || '')}"></label>`).join('')}</div>
+        <div class="pz-adm">${[...PZ_PLACES.map(n => ['p' + n, PZ_MEDAL(n) + ' ' + place(n), 200]), ['note', t('ad_pz_note'), 300], ['sponsor', t('ad_pz_sp'), 80]].map(([k, l, mx]) => `<label class="small">${esc(l)}<input type="text" data-pz="${k}" maxlength="${mx}" value="${esc(st.ui?.prizes?.[k] || '')}"></label>`).join('')}</div>
         <span class="small">${esc(t('ad_pz_hint'))}</span></div>
       <div class="field" style="grid-column:1/-1"><label class="l">${t('ad_show')}</label><div class="actions" style="justify-content:flex-start;gap:14px;flex-wrap:wrap">
         ${['instagram', 'star', 'need'].map(k => `<label class="check"><input type="checkbox" data-mui="${k}" ${missUi(k) ? 'checked' : ''}> ${t('ui_' + k)}</label>`).join('')}</div></div>
@@ -1150,10 +1212,10 @@ function openRules(){
 const PZ_PLACES = Array.from({ length: 12 }, (_, i) => i + 1);
 const PZ_MEDAL = n => ['🥇', '🥈', '🥉'][n - 1] || '🏅';
 function openPrizes(){
-  const pz = state.miss.st.ui?.prizes || {}, has = [...PZ_PLACES.map(n => 'p' + n), 'more'].some(k => (pz[k] || '').trim());
+  const pz = state.miss.st.ui?.prizes || {}, has = PZ_PLACES.map(n => 'p' + n).some(k => (pz[k] || '').trim());
   const row = (lbl, txt) => (txt || '').trim() ? `<div class="pz-row"><span class="pz-place">${lbl}</span><div>${esc(txt.trim()).replace(/\n/g, '<br>')}</div></div>` : '';
   openModal(`<h2>🏆 ${esc(t('pz_btn'))}</h2>
-    ${has ? `<div class="pz-list">${PZ_PLACES.map(n => row(PZ_MEDAL(n) + ' ' + esc(place(n)), pz['p' + n])).join('')}${row('🎀 ' + esc(t('pz_other')), pz.more)}</div>`
+    ${has ? `<div class="pz-list">${PZ_PLACES.map(n => row(PZ_MEDAL(n) + ' ' + esc(place(n)), pz['p' + n])).join('')}</div>`
       : `<p class="sub">${esc(t('pz_soon'))}</p>`}
     ${(pz.note || '').trim() ? `<p>${esc(pz.note.trim()).replace(/\n/g, '<br>')}</p>` : ''}
     ${(pz.sponsor || '').trim() ? `<p><b>${esc(t('pz_sp', { s: pz.sponsor.trim() }))}</b></p>` : ''}
@@ -1242,6 +1304,7 @@ function trackClick(d){
   if (d.mflag) return track('flag');
   if (d.mfav) return track('fav', Number(d.mfav));
   if (d.mpage) return track('page_n');
+  if (d.mfeed) return track('feed:' + d.mfeed);
 }
 function visitAgg(rows, days){ // same result as miss_visit_stats() in SQL (used by the demo)
   const bkk = iso => new Date(new Date(iso).getTime() + 7 * 36e5).toISOString().slice(0, 10);
@@ -1341,7 +1404,9 @@ document.addEventListener('click', async e => {
   if (d.mview){ state.missView = d.mview; renderMiss(); return; }
   if (d.mshare){ const id = Number(d.mshare); try { await navigator.share({ title: state.miss.st.title, text: missShareText(id, d.own === '1'), url: missUrl(id) }); } catch {} return; }
   if (d.mcopy){ const id = Number(d.mcopy); try { await navigator.clipboard.writeText(`${missShareText(id, d.own === '1')}\n${missUrl(id)}`); toast(t('copied')); const box = tg.closest('.box')?.querySelector('.mshare-txt'); if (box){ box.classList.add('copied'); setTimeout(() => box.classList.remove('copied'), 1200); } } catch { toast(t('copy_fail'), true); } return; }
-  if (d.mpage){ state.missPage = Number(d.mpage); renderMiss(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (d.mpage){ state.missPage = Number(d.mpage); if (state.feed) await loadFeed(); renderMiss(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (d.mfeed){ state.feedTab = d.mfeed; state.missPage = 1; await loadFeed(); renderMiss(); return; }
+  if (d.mwithdraw) return openWithdraw(Number(d.mwithdraw));
   if (d.mst){ try { await api.missSetStatus(Number(d.id), d.mst); toast(d.mst === 'approved' ? t('ad_approved') : t('ad_rejected')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return; }
   switch (d.act){
     case 'login': joinIntent.set(false); return openLogin();
@@ -1357,6 +1422,7 @@ document.addEventListener('click', async e => {
     case 'asuser': state.asUser = !state.asUser; store.set('mp_as_user', state.asUser); renderUser(); renderMiss(); return;
     case 'theme': { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; try { localStorage.setItem('mp_theme', next); } catch {} renderUser(); return; }
     case 'signup': return openMissSignup();
+    case 'withdraw': return openWithdraw(null);
     case 'joinnow': { const l = leadStore.get(); joinIntent.set(true); openLogin('up'); if (l?.email && $('#li_email')) $('#li_email').value = l.email; return; }
     case 'joinlogin': joinIntent.set(true); return openLogin();
     case 'leadnew': store.del('mp_lead'); store.del('mp_draft'); return openLead(false);
