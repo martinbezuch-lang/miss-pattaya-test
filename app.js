@@ -103,6 +103,49 @@ async function signPhotos(paths){
   try { for (const x of await api.signPhotos(need)) if (x.signedUrl) signedPhotos.set(x.path, x.signedUrl); } catch(e){ console.warn(e); }
 }
 const missPhotoOf = c => missPhoto(c.photo_path);
+/* registration closes 48 h before the end of round 1 and stays closed from round 2 (same rule as miss_reg_deadline() in the database) */
+function regDeadline(st){
+  if (st.current_round > 1) return 0;
+  const r = Date.parse(st.registration_until);
+  return st.round_ends_at ? Math.min(r, Date.parse(st.round_ends_at) - 48 * 36e5) : r;
+}
+const drawEnd = st => st.current_round !== 1 ? 0 : st.round_ends_at ? Date.parse(st.round_ends_at) - 24 * 36e5 : Infinity;
+/* main photo A/B: when a contestant lets the fans decide, her approved photos take turns on the card;
+   views and taps are counted and every hour the database makes the best one the main photo */
+const AB_VIEWS = 200, abPick = new Map(), abSeen = new Set(), abQ = { v: [], c: [] };
+function cardPhoto(c){
+  const list = (state.miss?.mediaBy?.get(c.id) || []).filter(p => p.kind === 'photo' && p.path);
+  if (c.photo_mode !== 'fans' || list.length < 2 || photosHidden()) return { src: missPhotoOf(c), pid: null };
+  const pool = list.filter(p => p.views < AB_VIEWS);
+  if (!pool.length) return { src: missPhotoOf(c), pid: null };
+  let p = list.find(x => x.id === abPick.get(c.id));
+  if (!p){ p = pool[Math.floor(Math.random() * pool.length)]; abPick.set(c.id, p.id); }
+  if (!abSeen.has(p.id)){ abSeen.add(p.id); abQ.v.push(p.id); }
+  return { src: missPhoto(p.path), pid: p.id };
+}
+function abFlush(){
+  if (!api?.photoStats || (!abQ.v.length && !abQ.c.length)) return;
+  const v = abQ.v.splice(0, 60), c = abQ.c.splice(0, 20);
+  api.photoStats(v, c).catch(() => {});
+}
+setInterval(abFlush, 20000);
+addEventListener('pagehide', abFlush);
+function vidEmbed(u){
+  let m;
+  if ((m = u.match(/instagram\.com\/(?:p|reels?)\/([A-Za-z0-9_-]+)/))) return `https://www.instagram.com/p/${m[1]}/embed`;
+  if ((m = u.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/))) return `https://www.tiktok.com/embed/v2/${m[1]}`;
+  if ((m = u.match(/(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([A-Za-z0-9_-]{6,})/))) return `https://www.youtube-nocookie.com/embed/${m[1]}`;
+  return null;
+}
+function vidCanon(u){ // the clean link that is stored (the database accepts only these shapes)
+  let m; u = String(u || '').trim().replace(/^http:\/\//i, 'https://').replace(/^https:\/\/(m\.|mobile\.)/i, 'https://www.');
+  if ((m = u.match(/instagram\.com\/(p|reels?)\/([A-Za-z0-9_-]+)/))) return `https://www.instagram.com/${m[1] === 'p' ? 'p' : 'reel'}/${m[2]}/`;
+  if ((m = u.match(/tiktok\.com\/(@[A-Za-z0-9_.-]+)\/video\/(\d+)/))) return `https://www.tiktok.com/${m[1]}/video/${m[2]}`;
+  if ((m = u.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/))) return `https://www.youtube.com/shorts/${m[1]}`;
+  if ((m = u.match(/(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/))) return `https://www.youtube.com/watch?v=${m[1]}`;
+  return null;
+}
+const vidSite = u => /instagram\./.test(u) ? 'Instagram' : /tiktok\./.test(u) ? 'TikTok' : 'YouTube';
 function normLink(key, v){
   v = (v || '').trim(); if (!v) return '';
   if (/^https?:\/\//i.test(v)) return v;
@@ -336,7 +379,24 @@ async function makeSupabaseApi(){
     async notesSeen(){ chk(await sb.rpc('miss_notes_seen')); },
     /* visit counter (needs navstevy.sql) */
     async track(r){ await sb.rpc('miss_track', { p_page: r.page, p_ref: r.ref ?? null, p_vid: r.vid, p_country: r.country || null, p_lang: r.lang, p_src: r.src || null, p_mobile: r.mobile }); },
-    async visitStats(days){ return chk(await sb.rpc('miss_visit_stats', { p_days: days })); }
+    async visitStats(days){ return chk(await sb.rpc('miss_visit_stats', { p_days: days })); },
+    /* photo & video gallery + draw of late contestants (27. 11.) */
+    mediaOn: true,
+    async waiting(){ return chk(await sb.from('miss_waiting').select('*').order('created_at')); },
+    async drawDraft(){ return chk(await sb.from('miss_draw_draft').select('contestant_id,group_no')); },
+    async drawAuto(){ return chk(await sb.rpc('miss_draw_auto')); },
+    async drawSet(id, g){ chk(await sb.rpc('miss_draw_set', { p_contestant: id, p_group: g })); },
+    async drawClear(){ chk(await sb.rpc('miss_draw_clear')); },
+    async drawPublish(){ return chk(await sb.rpc('miss_draw_publish')); },
+    async photosPublic(){ return chk(await sb.from('miss_photos').select('id,contestant_id,kind,path,url,views').eq('status', 'approved').order('id').limit(5000)); },
+    async myMedia(cid){ return chk(await sb.from('miss_photos').select('*').eq('contestant_id', cid).order('id')); },
+    async mediaAdd(row){ chk(await sb.from('miss_photos').insert(row)); },
+    async mediaDel(id){ const r = chk(await sb.from('miss_photos').delete().eq('id', id).select('id')); if (!r || !r.length) throw new Error('E:FORBIDDEN'); },
+    async photoMain(id){ chk(await sb.rpc('miss_photo_main', { p_photo: id })); },
+    async photoMode(mode){ chk(await sb.rpc('miss_photo_mode', { p_mode: mode, p_contestant: null })); },
+    async photoReview(id, ok){ chk(await sb.rpc('miss_photo_review', { p_photo: id, p_ok: ok })); },
+    async mediaPending(){ return chk(await sb.from('miss_photos').select('*, miss_contestants(first_name,country,status)').eq('status', 'pending').order('created_at')); },
+    async photoStats(v, c){ await sb.rpc('miss_photo_stats', { p_views: v, p_clicks: c }); }
   };
 }
 
@@ -356,10 +416,13 @@ async function loadMiss(){
   if (api.probeId && state.user && !api._probed){ api._probed = true; await api.probeId().catch(() => {}); }
   const [st, board] = await Promise.all([api.missSettings(), api.missBoard()]);
   const mine = state.user ? await Promise.all([api.myMissVotes(state.user.id, st.current_round).catch(() => []), api.missWallet(state.user.id).catch(() => 0), api.myContestant(state.user.id).catch(() => null)]) : [[], 0, null];
-  await signPhotos([...board.map(c => c.photo_path), mine[2]?.photo_path]);
+  const [waiting, media] = api.mediaOn ? await Promise.all([api.waiting().catch(() => []), api.photosPublic().catch(() => [])]) : [[], []];
+  const mediaBy = new Map(); for (const p of media){ const k = Number(p.contestant_id); if (!mediaBy.has(k)) mediaBy.set(k, []); mediaBy.get(k).push(p); }
+  await signPhotos([...board.map(c => c.photo_path), mine[2]?.photo_path, ...waiting.map(c => c.photo_path), ...media.map(p => p.path)]);
   const gifts = mine[2]?.id ? await api.myGifts(mine[2].id).catch(() => []) : [];
   const notes = state.user ? await api.notes().catch(() => []) : [], notesSeen = state.user ? await api.notesSeenAt().catch(() => null) : null;
-  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2], gifts, notes, notesSeen };
+  state.miss = { st, board: board.map(c => ({ ...c, id: Number(c.id) })), myVotes: mine[0], credits: mine[1], me: mine[2], gifts, notes, notesSeen,
+    waiting: waiting.map(c => ({ ...c, id: Number(c.id) })), mediaBy };
   const fav = missFavs(); let ch = false;
   for (const v of state.miss.myVotes){ const id = Number(v.contestant_id); if (!fav.includes(id) && !missUnfav().includes(id)){ fav.push(id); ch = true; } }
   if (ch) store.set('mp_fav', fav);
@@ -575,7 +638,7 @@ function renderMiss(){
   const fd = state.feed, per = fd ? FEED_N : PER_PAGE, pages = Math.max(1, Math.ceil((fd ? fd.total : groups.length) / per));
   state.missPage = Math.min(Math.max(1, state.missPage || 1), pages);
   const shown = fd ? fd.groups.filter(g => groups.includes(g)) : groups.slice((state.missPage - 1) * PER_PAGE, state.missPage * PER_PAGE);
-  const regOpen = Date.now() < Date.parse(st.registration_until);
+  const regOpen = Date.now() < regDeadline(st);
   const isWoman = state.profile?.gender === 'female', view = state.missView || 'all';
   let cta = '';
   if (m.me) cta = `<button class="btn primary" data-act="signup">${t('my_entry')}</button> <span class="pill">${t('st_' + m.me.status)}</span>`;
@@ -596,17 +659,27 @@ function renderMiss(){
     ${isAdmin() ? '<div id="missAdmin"></div>' : ''}
     ${missIdBox()}
     ${missMeBox()}
+    ${view === 'all' ? missWaitingBox() : ''}
     <div class="mtabs">${[['all', `<span class="lg">${t('tab_all')}</span><span class="sm">${t('tab_all_short')}</span>`], ['fav', `⭐ <span class="lg">${t('tab_fav')} </span>(${missFavs().filter(id => m.board.some(c => c.id === id)).length})`], ['stats', `📊<span class="lg"> ${t('tab_stats')}</span>`]].map(([k, l]) => `<button class="chip ${view === k ? 'on' : ''}" data-mview="${k}">${l}</button>`).join('')}
       ${fb.chips}
       ${view === 'all' ? `<span class="mlay"><button class="chip ${missLayout() === 'photo' ? 'on' : ''}" data-mlayout="photo" title="${esc(t('lay_photo'))}">▦</button><button class="chip ${missLayout() === 'list' ? 'on' : ''}" data-mlayout="list" title="${esc(t('lay_list'))}">☰</button></span>` : ''}</div>
     ${fb.note}
     ${view === 'all' && fd ? `<div class="mtabs mfeedt">${FEED_TABS.filter(k => k !== 'mine' || state.user).map(k => `<button class="chip ${fd.tab === k ? 'on' : ''}" data-mfeed="${k}">${esc(t('ft_' + k))}</button>`).join('')}</div>` : ''}
     ${view === 'fav' ? missFavView() : view === 'stats' ? missStatsView() : `${pager}
-    ${shown.length ? (missLayout() === 'list' ? `<div class="mfavs">${shown.map(g => missGroupCompact(g)).join('')}</div>` : shown.map(g => missGroup(g)).join('')) : `<div class="list"><div class="empty">${fd && fd.tab === 'mine' ? t('ft_mine_empty') : t('no_approved')}</div></div>`}
+    ${shown.length ? (missLayout() === 'list' ? `<div class="mfavs">${shown.map(g => missGroupCompact(g)).join('')}</div>` : shown.map(g => missGroup(g)).join('')) : fd && fd.tab !== 'mine' && (m.waiting || []).length ? '' : `<div class="list"><div class="empty">${fd && fd.tab === 'mine' ? t('ft_mine_empty') : t('no_approved')}</div></div>`}
     ${pager}`}`;
   if (view === 'all' && fd) markGroupsSeen(shown);
   if (isAdmin()) renderMissAdmin();
   if (isAdmin() && missEnded() && state.missNrShown !== st.current_round && $('#modal').hidden){ state.missNrShown = st.current_round; openMissNewRound(); }
+}
+/* approved contestants that are not drawn into a group yet – visible to everybody */
+function missWaitingBox(){
+  const w = state.miss?.waiting || []; if (!w.length) return '';
+  return `<section class="mgroup mwait"><div class="mgroup-h"><b>🎲 ${esc(t('wt_title', { n: w.length }))}</b><span class="small">${esc(t('wt_sub'))}</span></div>
+    <div class="mrow">${w.map(c => { const ph = missPhoto(c.photo_path);
+      return `<div class="mcard"><div style="position:relative"><button class="mphoto" data-mopen="${c.id}" aria-label="${esc(t('profile_of', { name: c.first_name }))}">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}" loading="lazy">` : `<span>${esc(c.first_name[0] || '?')}</span>`}</button>
+        <span class="mflagbig" title="${esc(countryName(c.country))}">${flagOf(c.country)}</span></div>
+        <div class="mline"><span class="mnm">${esc(c.first_name)}<small>${c.age}</small></span></div></div>`; }).join('')}</div></section>`;
 }
 function advLabel(adv){ return adv === 1 ? t('adv_one') : t('adv_range', { n: adv }); }
 function missGroupCompact(g){
@@ -626,9 +699,9 @@ function missGroup(g){
   const cd = state.user ? missCooldown(g) : null;
   return `<section class="mgroup"><div class="mgroup-h"><b>${esc(t('group_n', { n: g }))}</b>${cd ? `<span class="mcd">⏱ ${tCd('next_vote_in', cd.left)}</span>` : `<span class="small">${esc(advLabel(adv))}</span>`}</div>
     <div class="mrow">${list.map((c, i) => {
-      const ph = missPhotoOf(c), mineHere = cd && cd.contestant === c.id, r = i + 1, isFav = fav.includes(c.id);
+      const cp = cardPhoto(c), ph = cp.src, mineHere = cd && cd.contestant === c.id, r = i + 1, isFav = fav.includes(c.id);
       return `<div class="mcard ${f ? (c.country === f ? 'hl' : 'dim') : ''} ${r === adv + 1 ? 'cutl' : ''} ${r > adv ? 'outz' : ''}" data-cut="${esc(t('out_zone'))}">
-        <div style="position:relative"><button class="mphoto" data-mopen="${c.id}" aria-label="${esc(t('profile_of', { name: c.first_name }))}">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}" loading="lazy">` : `<span>${esc(c.first_name[0] || '?')}</span>`}<i class="mrank ${r <= adv ? 'adv' : ''}" title="${esc(r <= adv ? t('rank_adv') : t('rank_out'))}">${r === 1 && c.votes > 0 ? '👑 ' : ''}${r}.</i></button>
+        <div style="position:relative"><button class="mphoto" data-mopen="${c.id}" ${cp.pid ? `data-mph="${cp.pid}"` : ''} aria-label="${esc(t('profile_of', { name: c.first_name }))}">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}" loading="lazy">` : `<span>${esc(c.first_name[0] || '?')}</span>`}<i class="mrank ${r <= adv ? 'adv' : ''}" title="${esc(r <= adv ? t('rank_adv') : t('rank_out'))}">${r === 1 && c.votes > 0 ? '👑 ' : ''}${r}.</i></button>
         ${missUi('star') ? `<button class="mstar ${isFav ? 'on' : ''}" data-mfav="${c.id}" aria-label="${esc(isFav ? t('fav_remove') : t('fav_add'))}">${isFav ? '★' : '☆'}</button>` : ''}
         ${missUi('instagram') && c.instagram ? `<span class="msoc ${missUi('star') ? '' : 'nostar'}">${c.instagram ? `<a class="msico ig" href="${esc(normLink('instagram', c.instagram))}" target="_blank" rel="nofollow noopener ugc" title="Instagram" aria-label="Instagram ${esc(c.first_name)}">${SOC_ICON.instagram}</a>` : ''}</span>` : ''}
         <button class="mflagbig" data-mflag="${esc(c.country)}" title="${esc(t('flag_title', { c: countryName(c.country) }))}">${flagOf(c.country)}</button>
@@ -686,8 +759,12 @@ async function openMissProfile(id){
   const row = (l, v) => v ? `<div class="mrowi"><span>${l}</span><b>${esc(v)}</b></div>` : '';
   const sub = `${flagOf(c.country)} ${esc(countryName(c.country))} · ${esc(t('age_y', { n: c.age }))}${c.city ? ' · ' + esc(c.city) : ''}`;
   const pos = missPos(c.id), boardC = state.miss?.board.find(x => x.id === c.id);
+  const med = state.miss?.mediaBy?.get(Number(c.id)) || [], gal = ph ? med.filter(p => p.kind === 'photo' && p.path && missPhoto(p.path)) : [], vids = med.filter(p => p.kind === 'video' && vidEmbed(p.url || ''));
+  const waitingDraw = c.status === 'approved' && !c.group_no && !c.eliminated_round && c.round === state.miss?.st.current_round;
   openModal(`<div class="mprof">
     <div class="mprof-side"><div class="mprof-mhead"><h2>${esc(c.first_name)}</h2><p class="sub" style="margin:0">${sub}</p></div><div class="mprof-photo">${ph ? `<img src="${esc(ph)}" alt="${esc(c.first_name)}">` : `<span>${esc(c.first_name[0] || '?')}</span>`}</div>
+      ${gal.length > 1 ? `<div class="mgal">${gal.map(p => `<button type="button" class="mgal-t ${p.path === c.photo_path ? 'on' : ''}" data-galsrc="${esc(missPhoto(p.path))}" aria-label="${esc(c.first_name)}"><img src="${esc(missPhoto(p.path))}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
+      ${waitingDraw ? `<div class="mstat mwaitst">🎲 ${esc(t('wt_prof'))}</div>` : ''}
       ${isAdmin() ? `<label class="btn mprof-adph" style="display:block;text-align:center;margin:8px 0;cursor:pointer">📷 ${esc(t('ad_photo'))}<input type="file" id="adPhoto" accept="image/*" hidden></label>` : ''}
       ${isAdmin() && ['approved', 'pending'].includes(c.status) ? `<button class="linkbtn wdlink mprof-adph" data-mwithdraw="${c.id}" data-name="${esc(c.first_name)}" style="display:block;margin:0 auto 8px">${esc(t('wd_btn_adm'))}</button>` : ''}
       <div class="mprof-stats">${hist.length ? `<div class="mhist">${hist.map(h => `<div class="mhist-r"><span>${esc(t('hist_round', { r: h.round }))}</span><span>${esc(place(h.place))}</span><span>${votesTxt(h.votes)}</span><b class="${h.advanced ? 'up' : 'down'}">${h.advanced ? t('hist_adv') : t('hist_out')}</b></div>`).join('')}</div>` : ''}
@@ -696,7 +773,8 @@ async function openMissProfile(id){
       <p class="sub">${sub}</p>
       <div class="mprof-traits">${row(t('fav_food'), c.favorite_food)}${row(t('fav_city'), c.favorite_city)}${row(t('free_time'), c.hobbies)}${EXTRA_Q.map(([k, l]) => row(t(l), (c.extra || {})[k])).join('')}
       ${c.about ? `<p style="white-space:pre-line;margin:10px 0">${esc(c.about)}</p>` : ''}
-      <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div></div>
+      <div class="mlinks">${LINK_DEFS.filter(([k]) => links[k]).map(([k, l]) => `<a class="chip" href="${esc(normLink(k, links[k]))}" target="_blank" rel="nofollow noopener ugc">${l}</a>`).join('')}</div>
+      ${vids.length ? `<div class="mvids">${vids.map(v => `<button type="button" class="btn mvid" data-vid="${esc(vidEmbed(v.url))}" title="${esc(t('vd_note', { s: vidSite(v.url) }))}">${esc(t('vd_play', { s: vidSite(v.url) }))}</button>`).join('')}</div>` : ''}</div>
       ${inRound ? `<div class="mprof-vote"><div class="box" style="margin-top:14px"><b>${esc(t('support', { name: c.first_name }))}</b>
         <button class="btn primary mvbig" data-mvote="${c.id}" data-close-after="1" ${missVoteOpen() ? '' : 'disabled'}>${missEnded() ? t('round_ended') : t('vote')}</button>
         <div style="margin-top:10px">${creditTiles(c.id, t('cr_or'))}</div></div>${pos ? missShareBox(c.id, state.miss?.me && Number(state.miss.me.id) === c.id) : ''}</div>` : ''}
@@ -846,11 +924,14 @@ async function openMissSignup(viaJoin){
   openModal(`<h2>${me.id ? t('su_edit') : viaJoin ? t('jn_t3') : t('su_new')}</h2>
     <p class="sub">${t('su_sub')}</p>
     <form id="missForm">
-      <div class="mform-top"><label class="mphoto mup" id="mupLbl">${me.photo_path ? `<img src="${esc(missPhoto(me.photo_path))}" alt="">` : `<span>${t('add_photo')}</span>`}<input type="file" id="mfile" accept="image/*" hidden></label>
+      <div class="mform-top">${me.id && api.mediaOn ? `<div class="mupw"><button type="button" class="mphoto mup" data-act="mymedia" title="${esc(t('md_btn'))}">${me.photo_path ? `<img src="${esc(missPhoto(me.photo_path))}" alt="">` : `<span>${t('add_photo')}</span>`}</button>
+          <button type="button" class="btn mupb" data-act="mymedia">${esc(t('md_btn'))}</button></div>`
+        : `<label class="mphoto mup" id="mupLbl">${me.photo_path ? `<img src="${esc(missPhoto(me.photo_path))}" alt="">` : `<span>${t('add_photo')}</span>`}<input type="file" id="mfile" accept="image/*" hidden></label>`}
         <div style="flex:1">
           <div class="field"><label class="l" for="mfn">${t('first_name')}</label><input type="text" id="mfn" required minlength="2" maxlength="40" value="${esc(me.first_name || '')}"></div>
           <div class="row2"><div class="field"><label class="l" for="mco">${t('country')}</label><select id="mco">${countryList().map(([c, n]) => `<option value="${c}" ${(me.country || state.profile?.country || 'TH') === c ? 'selected' : ''}>${flagOf(c)} ${esc(n)}</option>`).join('')}</select></div>
           <div class="field"><label class="l" for="mbd">${t('birth_date')}</label><input type="date" id="mbd" required max="${maxBirth}" value="${esc(me.birth_date || '')}" ${me.id ? 'disabled' : ''}></div></div>
+          ${api.mediaOn ? `<p class="small" style="margin:2px 0 0"><button type="button" class="linkbtn" data-act="photorules">${esc(t('pr_link'))}</button></p>` : ''}
         </div></div>
       <div class="row2"><div class="field"><label class="l" for="mci">${t('city')}</label><input type="text" id="mci" maxlength="80" value="${esc(me.city || '')}"></div>
         <div class="field"><label class="l" for="mff">${t('fav_food')}</label><input type="text" id="mff" maxlength="120" value="${esc(me.favorite_food || '')}"></div>
@@ -868,7 +949,7 @@ async function openMissSignup(viaJoin){
       <div class="actions">${me.id ? `<button type="button" class="btn ghost" data-close>${t('cancel')}</button>` : `<button type="button" class="btn ghost" data-act="draftlater">${t('su_later')}</button>`}<button class="btn primary" id="msave">${me.id ? t('save_changes') : t('submit_entry')}</button></div>
     </form>`, true);
   let photoBlob = null;
-  $('#mfile').addEventListener('change', async e => {
+  $('#mfile')?.addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     try { const b = await cropImage(f); e.target.value = ''; if (!b) return; photoBlob = b; $('#mupLbl').querySelector('img, span').outerHTML = `<img src="${URL.createObjectURL(photoBlob)}" alt="">`; }
     catch { $('#mErr').textContent = t('photo_fail'); }
@@ -891,6 +972,67 @@ async function openMissSignup(viaJoin){
       if (isNew && api.idOn) openIdVerify();
     } catch(err){ $('#mErr').textContent = errMsg(err); btn.disabled = false; }
   });
+}
+/* ---------------- my photos & videos (miss_photos) ---------------- */
+function openPhotoRules(){
+  openModal(`<h2>📋 ${esc(t('pr_title'))}</h2>
+    <ul class="mrules">${[1, 2, 3, 4, 5, 6, 7, 8].map(i => `<li>${esc(t('pr_' + i))}</li>`).join('')}</ul>
+    <div class="actions"><button type="button" class="btn primary" data-close>OK</button></div>`);
+}
+async function openMyMedia(){
+  const me = state.miss?.me; if (!me?.id) return;
+  openModal(`<div class="empty">${t('loading')}</div>`, true);
+  let list = [];
+  try { list = await api.myMedia(me.id); } catch(err){ openModal(`<p>${esc(errMsg(err))}</p>`); return; }
+  await signPhotos(list.map(p => p.path));
+  const photos = list.filter(p => p.kind === 'photo'), vids = list.filter(p => p.kind === 'video');
+  const nPh = photos.filter(p => p.status !== 'rejected').length, nV = vids.filter(p => p.status !== 'rejected').length;
+  const mode = me.photo_mode || 'fans', stl = s => `<i class="mmst ${s}">${esc(t('md_st_' + s))}</i>`;
+  const ok = store.get('mp_md_ok', false);
+  openModal(`<h2>📷 ${esc(t('md_title'))}</h2>
+    <p class="sub">${esc(t('md_sub'))} <button type="button" class="linkbtn" data-act="photorules">${esc(t('pr_link'))}</button></p>
+    <div class="field"><label class="l">${esc(t('md_main'))}</label>
+      <label class="check"><input type="radio" name="pmode" value="own" ${mode === 'own' ? 'checked' : ''}> ${esc(t('md_mode_own'))}</label>
+      <label class="check"><input type="radio" name="pmode" value="fans" ${mode === 'fans' ? 'checked' : ''}> ${esc(t('md_mode_fans'))}</label></div>
+    <div class="mmed">${photos.map(p => { const main = p.path === me.photo_path;
+      return `<div class="mmed-i ${main ? 'main' : ''} ${p.status}"><img src="${esc(missPhoto(p.path) || '')}" alt="">${main ? `<b class="mmed-main">★ ${esc(t('md_is_main'))}</b>` : ''}${stl(p.status)}
+        <div class="mmed-a">${p.status === 'approved' && !main ? `<button type="button" class="btn" data-pmain="${p.id}">★ ${esc(t('md_set_main'))}</button>` : ''}<button type="button" class="btn ghost" data-mdel="${p.id}" title="${esc(t('md_del'))}" aria-label="${esc(t('md_del'))}">🗑</button></div></div>`; }).join('')}
+      ${nPh < 8 ? `<label class="mmed-i mmed-add"><span>${esc(t('add_photo'))}</span><input type="file" id="mdFile" accept="image/*" hidden></label>` : ''}</div>
+    <p class="small" style="margin:4px 0 8px">${esc(t('md_count', { n: nPh }))}</p>
+    <label class="check field"><input type="checkbox" id="mdOk" ${ok ? 'checked' : ''}> ${esc(t('md_consent'))}</label>
+    <h4 class="sec" style="margin-top:12px">🎬 ${esc(t('vd_title'))}</h4>
+    ${vids.map(v => `<div class="mvrow2"><a href="${esc(v.url)}" target="_blank" rel="nofollow noopener ugc">${esc(vidSite(v.url))}</a> ${stl(v.status)} <span class="spacer" style="flex:1"></span><button type="button" class="btn ghost" data-mdel="${v.id}" aria-label="${esc(t('md_del'))}">🗑</button></div>`).join('')}
+    ${nV < 3 ? `<div class="actions" style="justify-content:flex-start;flex-wrap:nowrap"><input type="url" id="vdUrl" class="search" style="flex:1;min-width:0" placeholder="${esc(t('vd_ph'))}"><button type="button" class="btn" data-act="vdadd">${esc(t('vd_add'))}</button></div><p class="small">${esc(t('vd_hint'))}</p>` : ''}
+    <div class="err" id="mdErr"></div>
+    <div class="actions"><button type="button" class="btn primary" data-close>OK</button></div>`, true);
+  $('#mdOk').addEventListener('change', e => store.set('mp_md_ok', e.target.checked));
+  document.querySelectorAll('input[name="pmode"]').forEach(r => r.addEventListener('change', async () => {
+    try { await api.photoMode(r.value); me.photo_mode = r.value; toast(t('md_mode_ok')); } catch(err){ toast(errMsg(err), true); }
+  }));
+  $('#mdFile')?.addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    if (!$('#mdOk').checked){ $('#mdErr').textContent = t('md_need_ok'); return; }
+    try {
+      const b = await cropImage(f); if (!b) return;
+      toast(t('loading'));
+      const path = await api.uploadMissPhoto(state.user.id, b);
+      await api.mediaAdd({ contestant_id: me.id, kind: 'photo', path, consent_at: new Date().toISOString() });
+      toast(t('md_added')); openMyMedia();
+    } catch(err){ $('#mdErr').textContent = errMsg(err) || t('photo_fail'); }
+  });
+}
+async function mediaAction(d){
+  try {
+    if (d.mdel){ if (!confirm(t('md_del_q'))) return; await api.mediaDel(Number(d.mdel)); await loadMiss(); renderMiss(); return openMyMedia(); }
+    if (d.pmain){ await api.photoMain(Number(d.pmain)); toast(t('md_main_ok')); await loadMiss(); renderMiss(); return openMyMedia(); }
+    if (d.act === 'vdadd'){
+      const raw = ($('#vdUrl').value || '').trim(); if (!raw) return;
+      if (!$('#mdOk').checked){ $('#mdErr').textContent = t('md_need_ok'); return; }
+      const u = vidCanon(raw); if (!u) throw new Error('E:VIDEO_URL');
+      await api.mediaAdd({ contestant_id: state.miss.me.id, kind: 'video', url: u, consent_at: new Date().toISOString() });
+      toast(t('md_added')); return openMyMedia();
+    }
+  } catch(err){ const m = errMsg(err); if ($('#mdErr')) $('#mdErr').textContent = m; else toast(m, true); }
 }
 /* ---------------- withdrawal from the competition ---------------- */
 function openWithdraw(cid){
@@ -1104,6 +1246,9 @@ async function renderMissAdmin(){
   try { pend = await api.missPending(); await signPhotos(pend.map(c => c.photo_path)); } catch {}
   let leads = [], idq = [];
   if (api.idOn) [leads, idq] = await Promise.all([api.leads().catch(() => []), api.missIdQueue().catch(() => [])]);
+  let draft = [], pmed = [];
+  if (api.mediaOn) [draft, pmed] = await Promise.all([api.drawDraft().catch(() => []), api.mediaPending().catch(() => [])]);
+  await signPhotos(pmed.map(p => p.path));
   state.pend = pend; state.idQueue = idq; state.leadsAll = state.leadsAll || false;
   const shownLeads = state.leadsAll ? leads : leads.slice(0, 15);
   el.innerHTML = `<div class="panel"><div class="vs-head"><h3>${esc(t('ad_title', { t: st.title }))}</h3><button class="btn" data-act="visits">📊 ${esc(t('vs_title'))}</button></div>
@@ -1111,6 +1256,10 @@ async function renderMissAdmin(){
     ${pend.length ? `<div class="mpend">${pend.map(c => `<div class="mpc"><button class="mphoto sm" data-mopen="${c.id}">${c.photo_path ? `<img src="${esc(missPhoto(c.photo_path))}" alt="">` : `<span>${esc(c.first_name[0])}</span>`}</button>
       <div><b>${esc(c.first_name)}</b> ${flagOf(c.country)} · ${esc(t('born', { d: c.birth_date }))} ${api.idOn ? idBadge(c) : ''}${c.id_doc_path ? ` <button class="mlink" data-idview="${c.id}">${t('ad_id_view')}</button>` : ''}${c.about ? `<br><span class="small">${esc(c.about).slice(0, 80)}</span>` : ''}${contactLinks(c) ? `<br><span class="small">${contactLinks(c)}</span>` : ''}
       <div class="actions" style="justify-content:flex-start;margin-top:6px"><button class="btn primary" data-mst="approved" data-id="${c.id}">${t('approve')}</button><button class="btn danger" data-mst="rejected" data-id="${c.id}">${t('reject')}</button></div></div></div>`).join('')}</div>` : `<p class="small">${t('no_pending')}</p>`}
+    ${api.mediaOn ? missDrawAdmin(draft) + `<h4 class="sec" style="margin-top:14px">📷 ${esc(t('ad_media', { n: pmed.length }))} <button type="button" class="linkbtn" data-act="photorules">${esc(t('pr_link'))}</button></h4>
+    ${pmed.length ? `<div class="mmed adm">${pmed.map(p => `<div class="mmed-i">${p.kind === 'photo' ? `<img src="${esc(missPhoto(p.path) || '')}" alt="">` : `<a class="mmed-v" href="${esc(p.url)}" target="_blank" rel="nofollow noopener ugc">🎬 ${esc(vidSite(p.url || ''))}</a>`}
+      <div class="mmed-n"><button class="mlink" data-mopen="${p.contestant_id}">${esc(p.miss_contestants?.first_name || '#' + p.contestant_id)}</button> ${flagOf(p.miss_contestants?.country)}${p.miss_contestants?.status === 'pending' ? ` <span class="small">(${esc(t('st_pending'))})</span>` : ''}</div>
+      <div class="mmed-a"><button class="btn primary" data-prev="${p.id}" data-ok="1">${esc(t('ad_m_ok'))}</button><button class="btn danger" data-prev="${p.id}" data-ok="0">${esc(t('ad_m_no'))}</button></div></div>`).join('')}</div>` : `<p class="small">${esc(t('ad_media_none'))}</p>`}` : ''}
     ${api.idOn ? `<h4 class="sec" style="margin-top:14px">🪪 ${esc(t('ad_idq', { n: idq.length }))}</h4>
     ${idq.length ? `<div class="mpend">${idq.map(c => `<div class="mpc"><div><b>${esc(c.first_name)}</b> ${flagOf(c.country)} · ${ageOf(c.birth_date)} · ${idBadge(c)} <button class="btn" data-idview="${c.id}">${t('ad_id_view')}</button></div></div>`).join('')}</div>` : ''}
     <h4 class="sec" style="margin-top:14px">📋 ${esc(t('ad_leads', { n: leads.length }))}</h4>
@@ -1153,6 +1302,28 @@ async function renderMissAdmin(){
       toast(t('ad_saved')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); }
   });
 }
+/* draw of approved contestants that wait for a group (round 1 only, until 24 h before its end) */
+function missDrawAdmin(draft){
+  const st = state.miss.st, w = state.miss.waiting || [], end = drawEnd(st), open = Date.now() < end;
+  const dmap = new Map(draft.map(d => [Number(d.contestant_id), d.group_no]));
+  const pubG = Math.max(0, ...state.miss.board.map(c => c.group_no || 0)), maxG = Math.max(pubG, ...draft.map(d => d.group_no));
+  const n = w.filter(c => dmap.has(c.id)).length;
+  const opts = cur => `<option value="">${esc(t('dr_none'))}</option>` + Array.from({ length: maxG + 2 }, (_, i) => i + 1)
+    .map(g => `<option value="${g}" ${cur === g ? 'selected' : ''}>${esc(t('group_n', { n: g }))}${g > pubG ? ' · ' + esc(t('dr_new')) : ''}</option>`).join('');
+  return `<h4 class="sec" style="margin-top:14px" id="losovanie">🎲 ${esc(t('dr_title', { n: w.length }))}</h4>
+    <p class="small">${open ? esc(t('dr_until', { d: end === Infinity ? '—' : fmtDateTime(new Date(end).toISOString()) })) : esc(t('dr_closed'))}</p>
+    ${w.length ? `<div class="mdraw">${w.map(c => `<div class="mdraw-r"><button class="mphoto sm" data-mopen="${c.id}">${missPhoto(c.photo_path) ? `<img src="${esc(missPhoto(c.photo_path))}" alt="">` : `<span>${esc(c.first_name[0] || '?')}</span>`}</button>
+      <span><b>${esc(c.first_name)}</b> ${flagOf(c.country)} · ${c.age}</span>
+      <select class="sort" data-drset="${c.id}" ${open ? '' : 'disabled'}>${opts(dmap.get(c.id))}</select></div>`).join('')}</div>` : `<p class="small">${esc(t('dr_empty'))}</p>`}
+    ${open && w.length ? `<div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn" data-act="drawauto">${esc(t('dr_auto'))}</button>
+      ${draft.length ? `<button class="btn ghost" data-act="drawclear">${esc(t('dr_clear'))}</button>` : ''}
+      <button class="btn primary" data-act="drawpub" data-n="${n}" ${n ? '' : 'disabled'}>${esc(t('dr_pub', { n }))}</button></div>` : ''}
+    <p class="small">${esc(t('dr_hint'))}</p>`;
+}
+document.addEventListener('change', async e => {
+  const el = e.target.closest && e.target.closest('[data-drset]'); if (!el) return;
+  try { await api.drawSet(Number(el.dataset.drset), el.value ? Number(el.value) : null); renderMissAdmin(); } catch(err){ toast(errMsg(err), true); }
+});
 const POT_L = ['', 'A', 'B', 'C', 'D', 'E'];
 function openMissNewRound(){
   const m = state.miss, st = m.st, gs = [...new Set(m.board.map(c => c.group_no))];
@@ -1201,11 +1372,12 @@ function missNrPreview(){
     <p class="small" style="margin:6px 0 0">${t('nr_note')}</p>`;
 }
 function openRules(){
-  const st = state.miss.st, regOpen = Date.now() < Date.parse(st.registration_until);
+  const st = state.miss.st, dl = regDeadline(st), regOpen = Date.now() < dl;
   openModal(`<h2>${esc(t('ru_title', { t: st.title }))}</h2>
     <p>${t('ru_1', { e: missElim() === 1 ? t('ru_e1') : t('ru_en', { n: missElim() }) })}</p>
     <p>${t('ru_2', { h: st.vote_hours })}</p>
-    <p>${regOpen ? t('ru_open', { d: esc(fmtDate(st.registration_until)) }) : t('ru_closed')}</p>
+    <p>${regOpen ? t('ru_open', { d: esc(fmtDate(new Date(dl).toISOString())) }) : t('ru_closed')}</p>
+    ${api.mediaOn ? `<p>${esc(t('ru_draw'))} <button type="button" class="linkbtn" data-act="photorules">${esc(t('pr_link'))}</button></p>` : ''}
     <p class="small">${t('ru_4')}</p>`);
 }
 
@@ -1360,6 +1532,7 @@ async function openVisitStats(days){
 /* ---------------- routing ---------------- */
 function route(){
   if (location.hash === '#navstevy') return openVisitStats();
+  if (location.hash === '#losovanie'){ closeModal(); return setTimeout(() => $('#losovanie')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 700); }
   const m = location.hash.match(/^#(?:c|miss)-(\d+)$/);
   if (m) openMissProfile(Number(m[1]));
 }
@@ -1374,6 +1547,11 @@ document.addEventListener('click', async e => {
   const d = tg.dataset;
   trackClick(d);
   if (d.vsdays) return openVisitStats(Number(d.vsdays));
+  if (d.mph && abQ.c.length < 20) abQ.c.push(Number(d.mph));
+  if (d.galsrc){ const img = document.querySelector('.mprof-photo img'); if (img) img.src = d.galsrc; document.querySelectorAll('.mgal-t.on').forEach(b => b.classList.remove('on')); tg.classList.add('on'); return; }
+  if (d.vid){ const f = document.createElement('div'); f.className = 'mvid-f'; f.innerHTML = `<iframe src="${esc(d.vid)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>`; tg.replaceWith(f); return; }
+  if (d.mdel || d.pmain || d.act === 'vdadd') return mediaAction(d);
+  if (d.prev){ try { await api.photoReview(Number(d.prev), d.ok === '1'); toast(t('ad_saved')); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return; }
   if (d.mopen){ if (location.hash === '#c-' + d.mopen) openMissProfile(Number(d.mopen)); else location.hash = 'c-' + d.mopen; return; }
   if (d.mvote){ tg.disabled = true; const ok = await onMissVote(Number(d.mvote)); if (ok && d.closeAfter) closeModal(); else if (tg.isConnected) tg.disabled = false; return; }
   if (d.mcredopen) return openMissCreditVote(Number(d.mcredopen));
@@ -1423,6 +1601,12 @@ document.addEventListener('click', async e => {
     case 'theme': { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; try { localStorage.setItem('mp_theme', next); } catch {} renderUser(); return; }
     case 'signup': return openMissSignup();
     case 'withdraw': return openWithdraw(null);
+    case 'mymedia': return openMyMedia();
+    case 'photorules': return openPhotoRules();
+    case 'drawauto': try { const r = await api.drawAuto(); toast(t('dr_done', { n: r?.drawn ?? 0 })); renderMissAdmin(); } catch(err){ toast(errMsg(err), true); } return;
+    case 'drawclear': try { await api.drawClear(); renderMissAdmin(); } catch(err){ toast(errMsg(err), true); } return;
+    case 'drawpub': { const n = Number(tg.dataset.n || 0); if (!n || !confirm(t('dr_pub_q', { n }))) return;
+      try { const r = await api.drawPublish(); toast(t('dr_pub_ok', { n: r?.published ?? 0 })); await loadMiss(); renderMiss(); } catch(err){ toast(errMsg(err), true); } return; }
     case 'joinnow': { const l = leadStore.get(); joinIntent.set(true); openLogin('up'); if (l?.email && $('#li_email')) $('#li_email').value = l.email; return; }
     case 'joinlogin': joinIntent.set(true); return openLogin();
     case 'leadnew': store.del('mp_lead'); store.del('mp_draft'); return openLead(false);
